@@ -12,6 +12,7 @@ edition = "2018"
 
 [features]
 default = []
+print-truecolor = ["termion"]
 dev = ["clippy"]
 
 [dependencies]
@@ -21,3 +22,4 @@ itertools = "0.8.0"
 clippy = { version = "0.0.15", optional = true }
 hsl = "0.1.1"
 priority-queue = "0.6.0"
+termion = { version = "1.5.3", optional = true }

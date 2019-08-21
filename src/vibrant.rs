@@ -3,6 +3,9 @@ use std::collections::HashMap;
 
 use image::{DynamicImage, Pixel, Rgb};
 
+#[cfg(feature = "print-truecolor")]
+use termion::color;
+
 use hsl::HSL;
 use crate::settings;
 use crate::palette::Palette;
@@ -93,9 +96,11 @@ impl fmt::Display for Vibrancy {
                     if let Some(c) = $color {
                         let rgb = c.channels();
                         write!($formatter,
-                            " Color: #{:02X}{:02X}{:02X}\n",
+                            " Color: #{:02X}{:02X}{:02X}\t",
                             rgb[0], rgb[1], rgb[2]
                         )?;
+                        #[cfg(feature = "print-truecolor")]
+                        write!($formatter, "{}███{}\n", color::Fg(color::Rgb(rgb[0], rgb[1], rgb[2])), color::Fg(color::Reset))?;
                     } else {
                         write!($formatter, " Color: None\n")?;
                     }
