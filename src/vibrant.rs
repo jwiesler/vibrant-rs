@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use image::{GenericImage, Pixel, Rgb};
 
 use hsl::HSL;
-use settings;
-use palette::Palette;
+use crate::settings;
+use crate::palette::Palette;
 
 /// Vibrancy
 ///
@@ -85,21 +85,21 @@ impl Vibrancy {
 
 impl fmt::Display for Vibrancy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "Vibrant Colors {{\n"));
+        write!(f, "Vibrant Colors {{\n")?;
 
         macro_rules! display_color {
             ($formatter:expr, $name:expr, $color:expr) => {
                 {
-                    try!(write!($formatter, "\t"));
-                    try!(write!($formatter, $name));
+                    write!($formatter, "\t")?;
+                    write!($formatter, $name)?;
                     if let Some(c) = $color {
                         let rgb = c.channels();
-                        try!(write!($formatter,
+                        write!($formatter,
                             " Color: #{:02X}{:02X}{:02X}\n",
                             rgb[0], rgb[1], rgb[2]
-                        ));
+                        )?;
                     } else {
-                        try!(write!($formatter, " Color: None\n"));
+                        write!($formatter, " Color: None\n")?;
                     }
                 }
             };

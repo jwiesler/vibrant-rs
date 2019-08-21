@@ -53,7 +53,7 @@ impl Palette {
 
         let palette: Vec<Rgb<u8>> = quant.color_map_rgba()
                                          .iter()
-                                         .chunks_lazy(4)
+                                         .chunks(4)
                                          .into_iter()
                                          .map(|rgba_iter| {
                                              let rgba_slice: Vec<u8> = rgba_iter.cloned().collect();
