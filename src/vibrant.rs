@@ -1,7 +1,7 @@
 use std::fmt;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
-use image::{GenericImage, Pixel, Rgb};
+use image::{DynamicImage, Pixel, Rgb};
 
 use hsl::HSL;
 use crate::settings;
@@ -22,11 +22,9 @@ pub struct Vibrancy {
 
 impl Vibrancy {
     /// Create new vibrancy map from an image
-    pub fn new<P, G>(image: &G) -> Vibrancy
-        where P: Sized + Pixel<Subpixel = u8>,
-              G: Sized + GenericImage<Pixel = P>
+    pub fn new(image: &DynamicImage) -> Vibrancy
     {
-        generate_varation_colors(&Palette::new(image, 256, 10))
+        generate_varation_colors(&Palette::new(image, 256))
     }
 
     fn color_already_set(&self, color: &Rgb<u8>) -> bool {
@@ -37,7 +35,7 @@ impl Vibrancy {
 
     fn find_color_variation(&self,
                             palette: &[Rgb<u8>],
-                            pixel_counts: &BTreeMap<usize, usize>,
+                            pixel_counts: &HashMap<usize, usize>,
                             luma: &MTM<f64>,
                             saturation: &MTM<f64>)
                             -> Option<Rgb<u8>> {

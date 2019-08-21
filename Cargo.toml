@@ -20,3 +20,4 @@ color_quant = "1.0.1"
 itertools = "0.8.0"
 clippy = { version = "0.0.15", optional = true }
 hsl = "0.1.1"
+priority-queue = "0.6.0"

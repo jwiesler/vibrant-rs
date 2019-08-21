@@ -1,18 +1,27 @@
 use std::fmt;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use itertools::Itertools;
-use image::{GenericImage, Pixel, Rgb, Rgba};
-use color_quant::NeuQuant;
+use image::{FilterType, DynamicImage, GenericImageView, Pixel, Rgb};
+use crate::settings;
+use crate::quantizer::quantize_pixels;
+
+/// Color swatch generated from an image's palette.
+pub struct Swatch {
+    /// RGB color
+    pub rgb: Rgb<u8>,
+    /// Number of pixels that are approximated by this color
+    pub population: usize,
+}
 
 /// Palette of colors.
-#[derive(Debug, Hash, PartialEq, Eq, Default)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct Palette {
     /// Palette of Colors represented in RGB
     pub palette: Vec<Rgb<u8>>,
     /// A map of indices in the palette to a count of pixels in approximately that color in the
     /// original image.
-    pub pixel_counts: BTreeMap<usize, usize>,
+    pub pixel_counts: HashMap<usize, usize>,
 }
 
 impl Palette {
@@ -22,48 +31,45 @@ impl Palette {
     /// 8...512 and 1...30 respectively. (By the way: 10 is a good default quality.)
     ///
     /// [color_quant]: https://github.com/PistonDevelopers/color_quant
-    pub fn new<P, G>(image: &G, color_count: usize, quality: i32) -> Palette
-        where P: Sized + Pixel<Subpixel = u8>,
-              G: Sized + GenericImage<Pixel = P>
+    pub fn new(image: &DynamicImage, color_count: usize) -> Palette
     {
-        let pixels: Vec<Rgba<u8>> = image.pixels()
-                                         .map(|(_, _, pixel)| pixel.to_rgba())
+        // resize image to reduce computational complexity
+        let image = image.resize(settings::CALCULATE_BITMAP_MIN_DIMENSION, settings::CALCULATE_BITMAP_MIN_DIMENSION,
+            // is this even the right filter (bilinear)?
+            FilterType::Triangle);
+
+        println!("shrunk image to {}x{}", image.width(), image.height());
+
+        let pixels: Vec<Rgb<u8>> = image.pixels()
+                                         .map(|(_, _, pixel)| pixel.to_rgb())
                                          .collect();
 
-        let mut flat_pixels: Vec<u8> = Vec::with_capacity(pixels.len());
-        for rgba in &pixels {
-            if is_boring_pixel(&rgba) {
-                continue;
-            }
-
-            for subpixel in rgba.channels() {
-                flat_pixels.push(*subpixel);
+        let mut pixel_hashset = HashMap::<Rgb<u8>, usize>::new();
+        for i in &pixels {
+            match pixel_hashset.get_mut(i) {
+                Some(a) => *a += 1,
+                None => { pixel_hashset.insert(*i, 1); },
             }
         }
 
-        let quant = NeuQuant::new(quality, color_count, &flat_pixels);
+        let mut pixels_cleaned = pixels.clone();
+        pixels_cleaned.retain(|i| !is_boring_pixel(&i));
 
-        let pixel_counts = pixels.iter()
-                                 .map(|rgba| quant.index_of(&rgba.channels()))
-                                 .fold(BTreeMap::new(),
-                                       |mut acc, pixel| {
-                                           *acc.entry(pixel).or_insert(0) += 1;
-                                           acc
-                                       });
+        println!("hashset: {}, original: {}, cleaned: {}", pixel_hashset.len(), pixels.len(), pixels_cleaned.len());
 
-        let palette: Vec<Rgb<u8>> = quant.color_map_rgba()
-                                         .iter()
-                                         .chunks(4)
-                                         .into_iter()
-                                         .map(|rgba_iter| {
-                                             let rgba_slice: Vec<u8> = rgba_iter.cloned().collect();
-                                             Rgba::from_slice(&rgba_slice).clone().to_rgb()
-                                         })
-                                         .unique()
-                                         .collect();
+        let quant = quantize_pixels(pixel_hashset.len() - 1, color_count, &mut pixels_cleaned, &mut pixel_hashset);
+
+        println!("{}", quant.len());
+
+        let mut pixel_counts = HashMap::<usize, usize>::new();
+        for (i, pixel) in quant.iter().enumerate() {
+            pixel_counts.insert(i, pixel.population);
+        }
+
+        let palette_pixels = quant.iter().fold(Vec::<Rgb<u8>>::new(), |mut v, p| { v.push(p.rgb); v});
 
         Palette {
-            palette: palette,
+            palette: palette_pixels,
             pixel_counts: pixel_counts,
         }
     }
@@ -89,14 +95,14 @@ impl Palette {
     }
 }
 
-fn is_boring_pixel(pixel: &Rgba<u8>) -> bool {
-    let (r, g, b, a) = (pixel[0], pixel[1], pixel[2], pixel[3]);
+fn is_boring_pixel(pixel: &Rgb<u8>) -> bool {
+    let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
 
     // If pixel is mostly opaque and not white
     const MIN_ALPHA: u8 = 125;
     const MAX_COLOR: u8 = 250;
 
-    let interesting = (a >= MIN_ALPHA) && !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR);
+    let interesting = !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR);
 
     !interesting
 }

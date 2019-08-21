@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub const CALCULATE_BITMAP_MIN_DIMENSION: u32 = 100;
+
 pub const TARGET_DARK_LUMA: f64 = 0.26;
 pub const MAX_DARK_LUMA: f64 = 0.45;
 

@@ -19,6 +19,7 @@ extern crate hsl;
 mod settings;
 mod palette;
 mod vibrant;
+mod quantizer;
 
 pub use vibrant::Vibrancy;
 pub use palette::Palette;
