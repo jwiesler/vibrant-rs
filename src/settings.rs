@@ -19,5 +19,5 @@ pub const TARGET_VIBRANT_SATURATION: f64 = 1.0;
 pub const MIN_VIBRANT_SATURATION: f64 = 0.35;
 
 pub const WEIGHT_SATURATION: f64 = 3.0;
-pub const WEIGHT_LUMA: f64 = 6.0;
-pub const WEIGHT_POPULATION: f64 = 1.0;
+pub const WEIGHT_LUMA: f64 = 6.5;
+pub const WEIGHT_POPULATION: f64 = 0.5;

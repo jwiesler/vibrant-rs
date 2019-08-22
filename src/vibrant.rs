@@ -27,7 +27,7 @@ impl Vibrancy {
     /// Create new vibrancy map from an image
     pub fn new(image: &DynamicImage) -> Vibrancy
     {
-        generate_varation_colors(&Palette::new(image, 256))
+        generate_varation_colors(&Palette::new(image, 64, 5))
     }
 
     fn color_already_set(&self, color: &Rgb<u8>) -> bool {
@@ -45,7 +45,7 @@ impl Vibrancy {
         let mut max = None;
         let mut max_value = 0_f64;
 
-        let complete_population = pixel_counts.values().fold(0, |acc, c| acc + c);
+        let complete_population = pixel_counts.values().max().unwrap();
 
         for (index, swatch) in palette.iter().enumerate() {
             let HSL {h: _, s, l} = HSL::from_rgb(swatch.channels());
@@ -61,7 +61,7 @@ impl Vibrancy {
                                                     l,
                                                     luma.target,
                                                     population,
-                                                    complete_population as f64);
+                                                    *complete_population as f64);
                 if max.is_none() || value > max_value {
                     max = Some(swatch.clone());
                     max_value = value;

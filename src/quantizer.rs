@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::cmp;
+use std::collections::BTreeMap;
 use priority_queue::PriorityQueue;
-use image::{Pixel, Rgb};
-use hsl::HSL;
+use image::Rgb;
 
 use crate::palette::Swatch;
 
-const BLACK_MAX_LIGHTNESS: f64 = 0.05;
-const WHITE_MIN_LIGHTNESS: f64 = 0.95;
+const FRACT_BY_POPULATIONS: f64 = 0.75;
+
+const SIGBITS: usize = 5;
+const RSHIFT: usize = 8 - SIGBITS;
+
 
 ///An color quantizer based on the Median-cut algorithm, but optimized for picking out distinct
 ///colors rather than representation colors.
@@ -19,24 +22,17 @@ const WHITE_MIN_LIGHTNESS: f64 = 0.95;
 ///have roughly the same population, where this quantizer divides boxes based on their color volume.
 ///This means that the color space is divided into distinct colors, rather than representative
 ///colors.
-/*
-pub struct Quantizer {
-    pub colors: Vec<Rgb<u8>>,
-    pub color_pop: HashMap<usize, usize>,
-    pub quantized_colors: Vec<Rgb<u8>>,
-}
-*/
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 struct Vbox {
-    lower_index: usize,
-    upper_index: usize,
     min_red: u8,
     max_red: u8,
     min_green: u8,
     max_green: u8,
     min_blue: u8,
     max_blue: u8,
+    // TODO refactor to use ref and/or do externally
+    pub hist: BTreeMap<usize, usize>,
 }
 
 enum ColorChannel {
@@ -45,48 +41,51 @@ enum ColorChannel {
    Blue,
 }
 
+enum CompareFn {
+   Count,
+   Volume,
+}
 impl Vbox {
-    pub fn new(lower_index: usize, upper_index: usize, colors: &Vec<Rgb<u8>>) -> Vbox {
-        let mut vbox = Vbox {lower_index, upper_index, min_red: 0xff, min_green: 0xff, min_blue: 0xff, max_red: 0, max_green: 0,
-                 max_blue: 0};
-        vbox.fit_box(colors);
+    pub fn new(colors: &Vec<Rgb<u8>>) -> Vbox {
+        let hn = 1 << (3 * SIGBITS);
+        let mut vbox = Vbox {min_red: 0xff, min_green: 0xff, min_blue: 0xff, max_red: 0, max_green: 0,
+                 max_blue: 0, hist: BTreeMap::new()};
+
+        for i in colors {
+            // TODO rewrite with i.clone() and color.map(|a| >> RSHIFT)
+            let r = i[0] >> RSHIFT;
+            let g = i[1] >> RSHIFT;
+            let b = i[2] >> RSHIFT;
+
+            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            *vbox.hist.entry(idx).or_insert(0) += 1;
+            if r > vbox.max_red { vbox.max_red = r };
+            if g > vbox.max_green { vbox.max_green = g };
+            if b > vbox.max_blue { vbox.max_blue = b };
+            if r < vbox.min_red { vbox.min_red = r };
+            if g < vbox.min_green { vbox.min_green = g };
+            if b < vbox.min_blue { vbox.min_blue = b };
+        }
         vbox
     }
     pub fn get_volume(&self) -> u32 {
         (self.max_red as u32 - self.min_red as u32 + 1) * (self.max_green as u32- self.min_green as u32+ 1) *
                 (self.max_blue as u32 - self.min_blue as u32 + 1)
     }
-    fn can_split(&self) -> bool {
-        self.get_color_count() > 1
-    }
-    fn get_color_count(&self) -> usize {
-        self.upper_index - self.lower_index + 1
-    }
-    fn fit_box(&mut self, colors: &Vec<Rgb<u8>>) {
-        self.min_red = 0xff;
-        self.min_green = 0xff;
-        self.min_blue = 0xff;
-        self.max_red = 0x0;
-        self.max_green = 0x0;
-        self.max_blue = 0x0;
-
-        for i in self.lower_index..self.upper_index + 1 {
-            let color = colors[i];
-            if color[0] > self.max_red { self.max_red = color[0] };
-            if color[1] > self.max_green { self.max_green = color[1] };
-            if color[2] > self.max_blue { self.max_blue = color[2] };
-            if color[0] < self.min_red { self.min_red = color[0] };
-            if color[1] < self.min_green { self.min_green = color[1] };
-            if color[2] < self.min_blue { self.min_blue = color[2] };
+    pub fn get_count(&self) -> u32 {
+        let mut ct = 0;
+        for r in self.min_red..self.max_red + 1 {
+            for g in self.min_green..self.max_green + 1 {
+                for b in self.min_blue..self.max_blue + 1 {
+                    let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                    ct += match self.hist.get(&idx) {
+                        Some(p) => *p,
+                        None => continue,
+                    };
+                }
+            }
         }
-    }
-    pub fn split_box(&mut self, colors: &mut Vec<Rgb<u8>>) -> Vbox {
-        if !self.can_split() { panic!("Cannot split a box with only 1 color") };
-        let split_point = self.find_split_point(colors);
-        let new_box = Vbox::new(split_point + 1, self.upper_index, colors);
-        self.upper_index = split_point;
-        self.fit_box(colors);
-        new_box
+        ct as u32
     }
     fn get_longest_color_dimension(&self) -> ColorChannel {
         let red_len = self.max_red - self.min_red;
@@ -100,99 +99,212 @@ impl Vbox {
             ColorChannel::Blue
         }
     }
-    fn find_split_point(&self, colors: &mut Vec<Rgb<u8>>) -> usize {
-        let longest_dim = self.get_longest_color_dimension();
-        let col_slice = &mut colors[self.lower_index..self.upper_index + 1];
-        col_slice.sort_by(|a, b| {
-            match longest_dim {
-                ColorChannel::Red => a[0].cmp(&b[0]),
-                ColorChannel::Green => a[1].cmp(&b[0]),
-                ColorChannel::Blue => a[2].cmp(&b[0]),
-            }
-        });
-        let dim_midpoint = self.mid_point(&longest_dim);
-        for i in self.lower_index..self.upper_index + 1 {
-            let color = colors[i];
-            match longest_dim {
-                ColorChannel::Red => if color[0] >= dim_midpoint { return i },
-                ColorChannel::Green => if color[1] >= dim_midpoint { return i },
-                ColorChannel::Blue => if color[2] > dim_midpoint { return i },
-            }
-        }
-        return self.lower_index;
-    }
-    fn get_average_color(&self, colors: &Vec<Rgb<u8>>, color_pops: &HashMap<Rgb<u8>, usize>) -> Swatch {
+    fn avg(&self) -> Rgb<u8> {
+        let mult: u8 = 1 << RSHIFT;
         let mut red_sum: usize = 0;
         let mut green_sum: usize = 0;
         let mut blue_sum: usize = 0;
         let mut total_pop: usize = 0;
-        for i in self.lower_index..self.upper_index + 1 {
-            let color = colors[i];
-            let color_pop = color_pops.get(&color).unwrap();
-            total_pop += *color_pop;
-            red_sum += *color_pop * color[0] as usize;
-            green_sum += *color_pop * color[1] as usize;
-            blue_sum += *color_pop * color[2] as usize;
+
+        for r in self.min_red..self.max_red + 1 {
+            for g in self.min_green..self.max_green + 1 {
+                for b in self.min_blue..self.max_blue + 1 {
+                    let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                    match self.hist.get(&idx) {
+                        None => continue,
+                        Some(h) => {
+                            total_pop += h;
+                            red_sum += (*h as f32 * (r as f32 + 0.5) * mult as f32) as usize;
+                            green_sum += (*h as f32 * (g as f32 + 0.5) * mult as f32) as usize;
+                            blue_sum += (*h as f32 * (b as f32 + 0.5) * mult as f32) as usize;
+                        }
+                    }
+                }
+            }
         }
-        let red_avg = (red_sum as f32 / total_pop as f32).round() as u8;
-        let green_avg = (green_sum as f32 / total_pop as f32).round() as u8;
-        let blue_avg = (blue_sum as f32 / total_pop as f32).round() as u8;
-        //println!("total pop: {}", total_pop);
-        Swatch {rgb: Rgb::<u8>([red_avg, green_avg, blue_avg]), population: total_pop}
+
+        if total_pop > 0 {
+            Rgb::<u8>([(red_sum as f32 /total_pop as f32).floor() as u8,
+                       (green_sum as f32 /total_pop as f32).floor() as u8,
+                       (blue_sum as f32 /total_pop as f32).floor() as u8])
+        } else {
+            Rgb::<u8>([(mult as f32 * (self.min_red + self.max_red + 1) as f32/ 2.0).round() as u8,
+                       (mult as f32 * (self.min_green + self.max_green + 1) as f32/ 2.0).round() as u8,
+                       (mult as f32 * (self.min_blue + self.max_blue + 1) as f32/ 2.0).round() as u8])
+        }
     }
-    fn mid_point(&self, channel: &ColorChannel) -> u8 {
-        match channel {
-            ColorChannel::Red => (self.min_red + self.max_red) / 2,
-            ColorChannel::Green => (self.min_green + self.max_green) / 2,
-            ColorChannel::Blue => (self.min_blue + self.max_blue) / 2,
+    fn split(&mut self) -> Vbox {
+        if self.get_count() <= 1 { return self.clone() };
+        let mut acc_sum = BTreeMap::<usize, usize>::new();
+        let mut sum;
+        let mut total = 0;
+        let longest_dim = self.get_longest_color_dimension();
+        match longest_dim {
+            ColorChannel::Red => {
+                for r in self.min_red..self.max_red + 1 {
+                    sum = 0;
+                    for g in self.min_green..self.max_green + 1 {
+                        for b in self.min_blue..self.max_blue + 1 {
+                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        }
+                    }
+                    total += sum;
+                    acc_sum.insert(r as usize, total);
+                }
+            }
+            ColorChannel::Green => {
+                for g in self.min_green..self.max_green + 1 {
+                    sum = 0;
+                    for r in self.min_red..self.max_red + 1 {
+                        for b in self.min_blue..self.max_blue + 1 {
+                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        }
+                    }
+                    total += sum;
+                    acc_sum.insert(g as usize, total);
+                }
+            }
+            ColorChannel::Blue => {
+                for b in self.min_blue..self.max_blue + 1 {
+                    sum = 0;
+                    for r in self.min_red..self.max_red + 1 {
+                        for g in self.min_green..self.max_green + 1 {
+                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        }
+                    }
+                    total += sum;
+                    acc_sum.insert(b as usize, total);
+                }
+            }
         }
+        let mut splitpoint = usize::max_value();
+        for (i, d) in &acc_sum {
+            if splitpoint == usize::max_value() && *d > total / 2 {
+                splitpoint = *i;
+            }
+        }
+
+        let mut vbox2 = self.clone();
+        match longest_dim {
+            ColorChannel::Red => {
+                let left = splitpoint - self.min_red as usize;
+                let right = self.max_red as usize - splitpoint;
+                if left <= right {
+                    self.max_red = cmp::min(self.max_red - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_red = cmp::max(0, self.max_red);
+                } else {
+                    let tmp_max_red = cmp::max(self.min_red, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    self.max_red = cmp::min(self.max_red, tmp_max_red);
+                }
+                for (k, _) in &acc_sum {
+                    if *k >= self.max_red as usize {
+                        self.max_red = *k as u8;
+                        break;
+                    }
+                }
+
+                vbox2.min_red = self.max_red + 1;
+            }
+            ColorChannel::Green => {
+                let left = splitpoint - self.min_green as usize;
+                let right = self.max_green as usize - splitpoint;
+                if left <= right {
+                    self.max_green = cmp::min(self.max_green - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_green = cmp::max(0, self.max_green);
+                } else {
+                    let tmp_max_green = cmp::max(self.min_green, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    self.max_green = cmp::min(self.max_green, tmp_max_green);
+                }
+                for (k, _) in &acc_sum {
+                    if *k >= self.max_green as usize {
+                        self.max_green = *k as u8;
+                        break;
+                    }
+                }
+                vbox2.min_green = self.max_green + 1;
+            }
+            ColorChannel::Blue => {
+                let left = splitpoint - self.min_blue as usize;
+                let right = self.max_blue as usize - splitpoint;
+                if left <= right {
+                    self.max_blue = cmp::min(self.max_blue - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_blue = cmp::max(0, self.max_blue);
+                } else {
+                    let tmp_max_blue = cmp::max(self.min_blue, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    self.max_blue = cmp::min(self.max_blue, tmp_max_blue);
+                }
+                for (k, _) in &acc_sum {
+                    if *k >= self.max_blue as usize {
+                        self.max_blue = *k as u8;
+                        break;
+                    }
+                }
+                vbox2.min_blue = self.max_blue + 1;
+            }
+
+        }
+        vbox2
     }
 }
-pub fn quantize_pixels (max_color_index: usize, max_colors: usize, colors: &mut Vec<Rgb<u8>>, color_pops: &HashMap<Rgb<u8>, usize>)
+pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>)
         -> Vec<Swatch> {
     // TODO use something else other than priority queue (binary_heap?)
     let mut pq = PriorityQueue::with_capacity(max_colors);
-    let full_box = Vbox::new(0, max_color_index, colors);
-    let vol = full_box.get_volume();
-    pq.push(full_box, vol);
-    split_boxes(&mut pq, max_colors, colors);
-    generate_average_colors(pq.into_sorted_vec(), colors, color_pops)
+    let full_box = Vbox::new(colors);
+    let ct = full_box.get_count();
+    pq.push(full_box, ct);
+    // first set sorted by population
+    split_boxes(&mut pq, (FRACT_BY_POPULATIONS * max_colors as f64) as usize, CompareFn::Count);
+
+    // reorder the existing set by volume
+    for (i,p) in pq.iter_mut() {
+        *p = i.get_count() * i.get_volume();
+    }
+
+    // second set sorted by volume
+    let sec_size = max_colors - pq.len();
+    split_boxes(&mut pq, sec_size, CompareFn::Volume);
+    generate_average_colors(pq.into_sorted_vec())
 }
-fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, colors: &mut Vec<Rgb<u8>>) {
+fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, cmp: CompareFn) {
+    let mut last_size = queue.len();
     while queue.len() < max_size {
         let vbox = queue.pop();
         match vbox {
             Some((mut b,_)) => {
-                let split_box = b.split_box(colors);
-                let split_vol = split_box.get_volume();
-                queue.push(split_box, split_vol);
-                let b_vol = b.get_volume();
-                queue.push(b, b_vol);
+                let split_box = b.split();
+                let split_val = match &cmp {
+                    CompareFn::Volume => split_box.get_count() * split_box.get_volume(),
+                    CompareFn::Count => split_box.get_count(),
+                };
+                queue.push(split_box, split_val);
+                let b_val = match &cmp {
+                    CompareFn::Volume => b.get_count() * b.get_volume(),
+                    CompareFn::Count => b.get_count(),
+                };
+                queue.push(b, b_val);
+
+                if queue.len() == last_size {
+                    break;
+                } else {
+                    last_size = queue.len();
+                }
             }
             None => return,
         }
     }
 }
-fn generate_average_colors(vboxes: Vec<Vbox>, colors: &Vec<Rgb<u8>>, color_pops: &HashMap<Rgb<u8>, usize>) -> Vec<Swatch> {
+fn generate_average_colors(vboxes: Vec<Vbox>) -> Vec<Swatch> {
     let mut avg_colors = Vec::<Swatch>::with_capacity(vboxes.len());
     for vbox in vboxes {
-        let color = vbox.get_average_color(&colors, color_pops);
-        if !should_ignore_color(color.rgb) {
-            avg_colors.push(color);
-        }
+        let color = vbox.avg();
+        avg_colors.push(Swatch{rgb: color, population: vbox.get_count() as usize});
     }
     avg_colors
 }
-fn should_ignore_color(color: Rgb<u8>) -> bool {
-    let hsl_color = HSL::from_rgb(color.channels());
-    is_white(hsl_color) || is_black(hsl_color) || is_near_red_i_line(hsl_color)
-}
-fn is_black(color: HSL) -> bool {
-    color.l <= BLACK_MAX_LIGHTNESS
-}
-fn is_white(color: HSL) -> bool {
-    color.l >= WHITE_MIN_LIGHTNESS
-}
-fn is_near_red_i_line(color: HSL) -> bool {
-    color.h >= 10.0 && color.h <= 37.0 && color.s <= 0.82
+fn get_color_index(color: Rgb<u8>) -> usize {
+    ((color[0] as usize) << (2 * SIGBITS)) + ((color[1] as usize) << SIGBITS) + color[2] as usize
 }

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use image::{FilterType, DynamicImage, GenericImageView, Pixel, Rgb};
-use crate::settings;
 use crate::quantizer::quantize_pixels;
+use termion::color;
 
 /// Color swatch generated from an image's palette.
 pub struct Swatch {
@@ -31,11 +31,10 @@ impl Palette {
     /// 8...512 and 1...30 respectively. (By the way: 10 is a good default quality.)
     ///
     /// [color_quant]: https://github.com/PistonDevelopers/color_quant
-    pub fn new(image: &DynamicImage, color_count: usize) -> Palette
+    pub fn new(image: &DynamicImage, color_count: usize, quality: usize) -> Palette
     {
         // resize image to reduce computational complexity
-        let image = image.resize(settings::CALCULATE_BITMAP_MIN_DIMENSION, settings::CALCULATE_BITMAP_MIN_DIMENSION,
-            // is this even the right filter (bilinear)?
+        let image = image.resize((image.width() as f32 / quality as f32) as u32, (image.height() as f32 / quality as f32) as u32,
             FilterType::Triangle);
 
         println!("shrunk image to {}x{}", image.width(), image.height());
@@ -57,7 +56,7 @@ impl Palette {
 
         println!("hashset: {}, original: {}, cleaned: {}", pixel_hashset.len(), pixels.len(), pixels_cleaned.len());
 
-        let quant = quantize_pixels(pixel_hashset.len() - 1, color_count, &mut pixels_cleaned, &mut pixel_hashset);
+        let quant = quantize_pixels(color_count, &mut pixels_cleaned);
 
         println!("{}", quant.len());
 
@@ -67,6 +66,11 @@ impl Palette {
         }
 
         let palette_pixels = quant.iter().fold(Vec::<Rgb<u8>>::new(), |mut v, p| { v.push(p.rgb); v});
+
+        //for i in quant{
+        //    println!("{:?} {}\t{}███{}", i.rgb, i.population, color::Fg(color::Rgb(i.rgb[0], i.rgb[1], i.rgb[2])),
+        //            color::Fg(color::Reset));
+        //}
 
         Palette {
             palette: palette_pixels,
@@ -99,7 +103,7 @@ fn is_boring_pixel(pixel: &Rgb<u8>) -> bool {
     let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
 
     // If pixel is mostly opaque and not white
-    const MIN_ALPHA: u8 = 125;
+    //const MIN_ALPHA: u8 = 125;
     const MAX_COLOR: u8 = 250;
 
     let interesting = !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR);
