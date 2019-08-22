@@ -31,8 +31,6 @@ struct Vbox {
     max_green: u8,
     min_blue: u8,
     max_blue: u8,
-    // TODO refactor to use ref and/or do externally
-    pub hist: BTreeMap<usize, usize>,
 }
 
 enum ColorChannel {
@@ -46,10 +44,10 @@ enum CompareFn {
    Volume,
 }
 impl Vbox {
-    pub fn new(colors: &Vec<Rgb<u8>>) -> Vbox {
+    pub fn new(colors: &Vec<Rgb<u8>>, hist: &mut BTreeMap<usize, usize>) -> Vbox {
         let hn = 1 << (3 * SIGBITS);
         let mut vbox = Vbox {min_red: 0xff, min_green: 0xff, min_blue: 0xff, max_red: 0, max_green: 0,
-                 max_blue: 0, hist: BTreeMap::new()};
+                 max_blue: 0};
 
         for i in colors {
             // TODO rewrite with let c = i.map(|a| a >> RSHIFT);
@@ -58,7 +56,7 @@ impl Vbox {
             let b = i[2] >> RSHIFT;
 
             let idx = get_color_index(Rgb::<u8>([r, g, b]));
-            *vbox.hist.entry(idx).or_insert(0) += 1;
+            *hist.entry(idx).or_insert(0) += 1;
             if r > vbox.max_red { vbox.max_red = r };
             if g > vbox.max_green { vbox.max_green = g };
             if b > vbox.max_blue { vbox.max_blue = b };
@@ -72,12 +70,12 @@ impl Vbox {
         (self.max_red as u32 - self.min_red as u32 + 1) * (self.max_green as u32- self.min_green as u32+ 1) *
                 (self.max_blue as u32 - self.min_blue as u32 + 1)
     }
-    pub fn get_count(&self) -> u32 {
+    pub fn get_count(&self, hist: &BTreeMap<usize, usize>) -> u32 {
         let mut ct = 0;
         for (r, g, b) in
                 iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
             let idx = get_color_index(Rgb::<u8>([r, g, b]));
-            ct += match self.hist.get(&idx) {
+            ct += match hist.get(&idx) {
                 Some(p) => *p,
                 None => continue,
             };
@@ -96,7 +94,7 @@ impl Vbox {
             ColorChannel::Blue
         }
     }
-    fn avg(&self) -> Rgb<u8> {
+    fn avg(&self, hist: &BTreeMap<usize, usize>) -> Rgb<u8> {
         let mult: u8 = 1 << RSHIFT;
         let mut red_sum: usize = 0;
         let mut green_sum: usize = 0;
@@ -106,7 +104,7 @@ impl Vbox {
         for (r, g, b) in
                 iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
             let idx = get_color_index(Rgb::<u8>([r, g, b]));
-            match self.hist.get(&idx) {
+            match hist.get(&idx) {
                 None => continue,
                 Some(h) => {
                     total_pop += h;
@@ -127,8 +125,8 @@ impl Vbox {
                        (mult as f32 * (self.min_blue + self.max_blue + 1) as f32/ 2.0).round() as u8])
         }
     }
-    fn split(&mut self) -> Vbox {
-        if self.get_count() <= 1 { return self.clone() };
+    fn split(&mut self, hist: &BTreeMap<usize, usize>) -> Vbox {
+        if self.get_count(hist) <= 1 { return self.clone() };
         let mut acc_sum = BTreeMap::<usize, usize>::new();
         let mut sum;
         let mut total = 0;
@@ -139,7 +137,7 @@ impl Vbox {
                     sum = 0;
                     for (g, b) in iproduct!(self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
                         let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(r as usize, total);
@@ -150,7 +148,7 @@ impl Vbox {
                     sum = 0;
                     for (r, b) in iproduct!(self.min_red..=self.max_red, self.min_blue..=self.max_blue) {
                         let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(g as usize, total);
@@ -161,7 +159,7 @@ impl Vbox {
                     sum = 0;
                     for (r, g) in iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green) {
                         let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
+                        sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(b as usize, total);
@@ -216,41 +214,41 @@ impl Vbox {
         vbox2
     }
 }
-pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>)
-        -> Vec<Swatch> {
+pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>) -> Vec<Swatch> {
     // TODO use something else other than priority queue (binary_heap?)
     let mut pq = PriorityQueue::with_capacity(max_colors);
-    let full_box = Vbox::new(colors);
-    let ct = full_box.get_count();
+    let mut hist = BTreeMap::<usize, usize>::new();
+    let full_box = Vbox::new(colors, &mut hist);
+    let ct = full_box.get_count(&hist);
     pq.push(full_box, ct);
     // first set sorted by population
-    split_boxes(&mut pq, (FRACT_BY_POPULATIONS * max_colors as f64) as usize, CompareFn::Count);
+    split_boxes(&mut pq, (FRACT_BY_POPULATIONS * max_colors as f64) as usize, &hist, CompareFn::Count);
 
     // reorder the existing set by volume
     for (i,p) in pq.iter_mut() {
-        *p = i.get_count() * i.get_volume();
+        *p = i.get_count(&hist) * i.get_volume();
     }
 
     // second set sorted by volume
     let sec_size = max_colors - pq.len();
-    split_boxes(&mut pq, sec_size, CompareFn::Volume);
-    generate_average_colors(pq.into_sorted_vec())
+    split_boxes(&mut pq, sec_size, &hist, CompareFn::Volume);
+    generate_average_colors(pq.into_sorted_vec(), &hist)
 }
-fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, cmp: CompareFn) {
+fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, hist: &BTreeMap<usize, usize>,  cmp: CompareFn) {
     let mut last_size = queue.len();
     while queue.len() < max_size {
         let vbox = queue.pop();
         match vbox {
             Some((mut b,_)) => {
-                let split_box = b.split();
+                let split_box = b.split(hist);
                 let split_val = match &cmp {
-                    CompareFn::Volume => split_box.get_count() * split_box.get_volume(),
-                    CompareFn::Count => split_box.get_count(),
+                    CompareFn::Volume => split_box.get_count(hist) * split_box.get_volume(),
+                    CompareFn::Count => split_box.get_count(hist),
                 };
                 queue.push(split_box, split_val);
                 let b_val = match &cmp {
-                    CompareFn::Volume => b.get_count() * b.get_volume(),
-                    CompareFn::Count => b.get_count(),
+                    CompareFn::Volume => b.get_count(hist) * b.get_volume(),
+                    CompareFn::Count => b.get_count(hist),
                 };
                 queue.push(b, b_val);
 
@@ -264,11 +262,11 @@ fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, cmp: Compar
         }
     }
 }
-fn generate_average_colors(vboxes: Vec<Vbox>) -> Vec<Swatch> {
+fn generate_average_colors(vboxes: Vec<Vbox>, hist: &BTreeMap<usize, usize>) -> Vec<Swatch> {
     let mut avg_colors = Vec::<Swatch>::with_capacity(vboxes.len());
     for vbox in vboxes {
-        let color = vbox.avg();
-        avg_colors.push(Swatch{rgb: color, population: vbox.get_count() as usize});
+        let color = vbox.avg(hist);
+        avg_colors.push(Swatch{rgb: color, population: vbox.get_count(hist) as usize});
     }
     avg_colors
 }

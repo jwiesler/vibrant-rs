@@ -37,28 +37,19 @@ impl Palette {
         let image = image.resize((image.width() as f32 / quality as f32) as u32, (image.height() as f32 / quality as f32) as u32,
             FilterType::Triangle);
 
-        println!("shrunk image to {}x{}", image.width(), image.height());
+        //println!("shrunk image to {}x{}", image.width(), image.height());
 
         let pixels: Vec<Rgb<u8>> = image.pixels()
                                          .map(|(_, _, pixel)| pixel.to_rgb())
                                          .collect();
 
-        let mut pixel_hashset = HashMap::<Rgb<u8>, usize>::new();
-        for i in &pixels {
-            match pixel_hashset.get_mut(i) {
-                Some(a) => *a += 1,
-                None => { pixel_hashset.insert(*i, 1); },
-            }
-        }
-
         let mut pixels_cleaned = pixels.clone();
         pixels_cleaned.retain(|i| !is_boring_pixel(&i));
 
-        println!("hashset: {}, original: {}, cleaned: {}", pixel_hashset.len(), pixels.len(), pixels_cleaned.len());
+        //println!("hashset: {}, original: {}, cleaned: {}", pixel_hashset.len(), pixels.len(), pixels_cleaned.len());
 
         let quant = quantize_pixels(color_count, &mut pixels_cleaned);
 
-        println!("{}", quant.len());
 
         let pixel_counts = quant.iter().enumerate().fold(HashMap::new(), |mut m, (i, p)| { m.insert(i, p.population); m });
 

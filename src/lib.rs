@@ -12,7 +12,6 @@
 #![deny(missing_docs)]
 
 extern crate image;
-extern crate color_quant;
 #[macro_use] extern crate itertools;
 extern crate hsl;
 
