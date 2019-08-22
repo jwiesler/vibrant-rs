@@ -109,11 +109,11 @@ impl fmt::Display for Vibrancy {
         }
 
         display_color!(f, "Primary Vibrant", self.primary);
-        display_color!(f, "Dark Vibrant", self.dark);
         display_color!(f, "Light Vibrant", self.light);
+        display_color!(f, "Dark Vibrant", self.dark);
         display_color!(f, "Muted", self.muted);
-        display_color!(f, "Dark Muted", self.dark_muted);
         display_color!(f, "Light Muted", self.light_muted);
+        display_color!(f, "Dark Muted", self.dark_muted);
 
         write!(f, "}}")
     }
