@@ -16,7 +16,7 @@ print-truecolor = ["termion"]
 dev = ["clippy"]
 
 [dependencies]
-image = { version = "0.22.1", default-features = false, features = ["png_codec", "jpeg"] }
+image = { version = "0.22.1", default-features = false, features = ["png_codec", "jpeg", "jpeg_rayon"] }
 itertools = "0.8.0"
 clippy = { version = "0.0.15", optional = true }
 hsl = "0.1.1"
