@@ -60,10 +60,7 @@ impl Palette {
 
         println!("{}", quant.len());
 
-        let mut pixel_counts = HashMap::<usize, usize>::new();
-        for (i, pixel) in quant.iter().enumerate() {
-            pixel_counts.insert(i, pixel.population);
-        }
+        let pixel_counts = quant.iter().enumerate().fold(HashMap::new(), |mut m, (i, p)| { m.insert(i, p.population); m });
 
         let palette_pixels = quant.iter().fold(Vec::<Rgb<u8>>::new(), |mut v, p| { v.push(p.rgb); v});
 

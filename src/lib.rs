@@ -13,7 +13,7 @@
 
 extern crate image;
 extern crate color_quant;
-extern crate itertools;
+#[macro_use] extern crate itertools;
 extern crate hsl;
 
 mod settings;

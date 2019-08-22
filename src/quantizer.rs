@@ -1,7 +1,7 @@
 use std::cmp;
 use std::collections::BTreeMap;
 use priority_queue::PriorityQueue;
-use image::Rgb;
+use image::{Pixel, Rgb};
 
 use crate::palette::Swatch;
 
@@ -52,7 +52,7 @@ impl Vbox {
                  max_blue: 0, hist: BTreeMap::new()};
 
         for i in colors {
-            // TODO rewrite with i.clone() and color.map(|a| >> RSHIFT)
+            // TODO rewrite with let c = i.map(|a| a >> RSHIFT);
             let r = i[0] >> RSHIFT;
             let g = i[1] >> RSHIFT;
             let b = i[2] >> RSHIFT;
@@ -74,16 +74,13 @@ impl Vbox {
     }
     pub fn get_count(&self) -> u32 {
         let mut ct = 0;
-        for r in self.min_red..self.max_red + 1 {
-            for g in self.min_green..self.max_green + 1 {
-                for b in self.min_blue..self.max_blue + 1 {
-                    let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                    ct += match self.hist.get(&idx) {
-                        Some(p) => *p,
-                        None => continue,
-                    };
-                }
-            }
+        for (r, g, b) in
+                iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
+            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            ct += match self.hist.get(&idx) {
+                Some(p) => *p,
+                None => continue,
+            };
         }
         ct as u32
     }
@@ -106,19 +103,16 @@ impl Vbox {
         let mut blue_sum: usize = 0;
         let mut total_pop: usize = 0;
 
-        for r in self.min_red..self.max_red + 1 {
-            for g in self.min_green..self.max_green + 1 {
-                for b in self.min_blue..self.max_blue + 1 {
-                    let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                    match self.hist.get(&idx) {
-                        None => continue,
-                        Some(h) => {
-                            total_pop += h;
-                            red_sum += (*h as f32 * (r as f32 + 0.5) * mult as f32) as usize;
-                            green_sum += (*h as f32 * (g as f32 + 0.5) * mult as f32) as usize;
-                            blue_sum += (*h as f32 * (b as f32 + 0.5) * mult as f32) as usize;
-                        }
-                    }
+        for (r, g, b) in
+                iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
+            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            match self.hist.get(&idx) {
+                None => continue,
+                Some(h) => {
+                    total_pop += h;
+                    red_sum += (*h as f32 * (r as f32 + 0.5) * mult as f32) as usize;
+                    green_sum += (*h as f32 * (g as f32 + 0.5) * mult as f32) as usize;
+                    blue_sum += (*h as f32 * (b as f32 + 0.5) * mult as f32) as usize;
                 }
             }
         }
@@ -141,51 +135,40 @@ impl Vbox {
         let longest_dim = self.get_longest_color_dimension();
         match longest_dim {
             ColorChannel::Red => {
-                for r in self.min_red..self.max_red + 1 {
+                for r in self.min_red..=self.max_red {
                     sum = 0;
-                    for g in self.min_green..self.max_green + 1 {
-                        for b in self.min_blue..self.max_blue + 1 {
-                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
-                        }
+                    for (g, b) in iproduct!(self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
+                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(r as usize, total);
                 }
             }
             ColorChannel::Green => {
-                for g in self.min_green..self.max_green + 1 {
+                for g in self.min_green..=self.max_green {
                     sum = 0;
-                    for r in self.min_red..self.max_red + 1 {
-                        for b in self.min_blue..self.max_blue + 1 {
-                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
-                        }
+                    for (r, b) in iproduct!(self.min_red..=self.max_red, self.min_blue..=self.max_blue) {
+                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(g as usize, total);
                 }
             }
             ColorChannel::Blue => {
-                for b in self.min_blue..self.max_blue + 1 {
+                for b in self.min_blue..=self.max_blue {
                     sum = 0;
-                    for r in self.min_red..self.max_red + 1 {
-                        for g in self.min_green..self.max_green + 1 {
-                            let idx = get_color_index(Rgb::<u8>([r, g, b]));
-                            sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
-                        }
+                    for (r, g) in iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green) {
+                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        sum += match self.hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
                     acc_sum.insert(b as usize, total);
                 }
             }
         }
-        let mut splitpoint = usize::max_value();
-        for (i, d) in &acc_sum {
-            if splitpoint == usize::max_value() && *d > total / 2 {
-                splitpoint = *i;
-            }
-        }
+        let (&splitpoint, _) = acc_sum.iter().find(|(_, &d)| d > total / 2).unwrap();
 
         let mut vbox2 = self.clone();
         match longest_dim {
@@ -199,13 +182,7 @@ impl Vbox {
                     let tmp_max_red = cmp::max(self.min_red, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
                     self.max_red = cmp::min(self.max_red, tmp_max_red);
                 }
-                for (k, _) in &acc_sum {
-                    if *k >= self.max_red as usize {
-                        self.max_red = *k as u8;
-                        break;
-                    }
-                }
-
+                self.max_red = *acc_sum.keys().find(|&k| *k >= self.max_red as usize).unwrap() as u8;
                 vbox2.min_red = self.max_red + 1;
             }
             ColorChannel::Green => {
@@ -218,12 +195,7 @@ impl Vbox {
                     let tmp_max_green = cmp::max(self.min_green, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
                     self.max_green = cmp::min(self.max_green, tmp_max_green);
                 }
-                for (k, _) in &acc_sum {
-                    if *k >= self.max_green as usize {
-                        self.max_green = *k as u8;
-                        break;
-                    }
-                }
+                self.max_green = *acc_sum.keys().find(|&k| *k >= self.max_green as usize).unwrap() as u8;
                 vbox2.min_green = self.max_green + 1;
             }
             ColorChannel::Blue => {
@@ -236,12 +208,7 @@ impl Vbox {
                     let tmp_max_blue = cmp::max(self.min_blue, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
                     self.max_blue = cmp::min(self.max_blue, tmp_max_blue);
                 }
-                for (k, _) in &acc_sum {
-                    if *k >= self.max_blue as usize {
-                        self.max_blue = *k as u8;
-                        break;
-                    }
-                }
+                self.max_blue = *acc_sum.keys().find(|&k| *k >= self.max_blue as usize).unwrap() as u8;
                 vbox2.min_blue = self.max_blue + 1;
             }
 
