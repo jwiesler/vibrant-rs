@@ -108,21 +108,21 @@ impl Vbox {
                 None => continue,
                 Some(h) => {
                     total_pop += h;
-                    red_sum += (*h as f32 * (r as f32 + 0.5) * mult as f32) as usize;
-                    green_sum += (*h as f32 * (g as f32 + 0.5) * mult as f32) as usize;
-                    blue_sum += (*h as f32 * (b as f32 + 0.5) * mult as f32) as usize;
+                    red_sum += (*h as f64 * (r as f64 + 0.5) * mult as f64) as usize;
+                    green_sum += (*h as f64 * (g as f64 + 0.5) * mult as f64) as usize;
+                    blue_sum += (*h as f64 * (b as f64 + 0.5) * mult as f64) as usize;
                 }
             }
         }
 
         if total_pop > 0 {
-            Rgb::<u8>([(red_sum as f32 /total_pop as f32).floor() as u8,
-                       (green_sum as f32 /total_pop as f32).floor() as u8,
-                       (blue_sum as f32 /total_pop as f32).floor() as u8])
+            Rgb::<u8>([(red_sum as f64 /total_pop as f64) as u8,
+                       (green_sum as f64 /total_pop as f64) as u8,
+                       (blue_sum as f64 /total_pop as f64) as u8])
         } else {
-            Rgb::<u8>([(mult as f32 * (self.min_red + self.max_red + 1) as f32/ 2.0).round() as u8,
-                       (mult as f32 * (self.min_green + self.max_green + 1) as f32/ 2.0).round() as u8,
-                       (mult as f32 * (self.min_blue + self.max_blue + 1) as f32/ 2.0).round() as u8])
+            Rgb::<u8>([(mult as f64 * (self.min_red + self.max_red + 1) as f64/ 2.0) as u8,
+                       (mult as f64 * (self.min_green + self.max_green + 1) as f64/ 2.0) as u8,
+                       (mult as f64 * (self.min_blue + self.max_blue + 1) as f64/ 2.0) as u8])
         }
     }
     fn split(&mut self, hist: &BTreeMap<usize, usize>) -> Vbox {
@@ -174,10 +174,10 @@ impl Vbox {
                 let left = splitpoint - self.min_red as usize;
                 let right = self.max_red as usize - splitpoint;
                 if left <= right {
-                    self.max_red = cmp::min(self.max_red - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_red = cmp::min(self.max_red - 1, (splitpoint as f64 + right as f64 / 2.0) as u8);
                     self.max_red = cmp::max(0, self.max_red);
                 } else {
-                    let tmp_max_red = cmp::max(self.min_red, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    let tmp_max_red = cmp::max(self.min_red, (splitpoint as f64 - 1.0 - left as f64 / 2.0) as u8);
                     self.max_red = cmp::min(self.max_red, tmp_max_red);
                 }
                 self.max_red = *acc_sum.keys().find(|&k| *k >= self.max_red as usize).unwrap() as u8;
@@ -187,10 +187,10 @@ impl Vbox {
                 let left = splitpoint - self.min_green as usize;
                 let right = self.max_green as usize - splitpoint;
                 if left <= right {
-                    self.max_green = cmp::min(self.max_green - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_green = cmp::min(self.max_green - 1, (splitpoint as f64 + right as f64 / 2.0) as u8);
                     self.max_green = cmp::max(0, self.max_green);
                 } else {
-                    let tmp_max_green = cmp::max(self.min_green, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    let tmp_max_green = cmp::max(self.min_green, (splitpoint as f64 - 1.0 - left as f64 / 2.0) as u8);
                     self.max_green = cmp::min(self.max_green, tmp_max_green);
                 }
                 self.max_green = *acc_sum.keys().find(|&k| *k >= self.max_green as usize).unwrap() as u8;
@@ -200,10 +200,10 @@ impl Vbox {
                 let left = splitpoint - self.min_blue as usize;
                 let right = self.max_blue as usize - splitpoint;
                 if left <= right {
-                    self.max_blue = cmp::min(self.max_blue - 1, (splitpoint as f32 + right as f32 / 2.0).round() as u8);
+                    self.max_blue = cmp::min(self.max_blue - 1, (splitpoint as f64 + right as f64 / 2.0) as u8);
                     self.max_blue = cmp::max(0, self.max_blue);
                 } else {
-                    let tmp_max_blue = cmp::max(self.min_blue, (splitpoint as f32 - 1.0 - left as f32 / 2.0).round() as u8);
+                    let tmp_max_blue = cmp::max(self.min_blue, (splitpoint as f64 - 1.0 - left as f64 / 2.0) as u8);
                     self.max_blue = cmp::min(self.max_blue, tmp_max_blue);
                 }
                 self.max_blue = *acc_sum.keys().find(|&k| *k >= self.max_blue as usize).unwrap() as u8;
@@ -215,7 +215,6 @@ impl Vbox {
     }
 }
 pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>) -> Vec<Swatch> {
-    // TODO use something else other than priority queue (binary_heap?)
     let mut pq = PriorityQueue::with_capacity(max_colors);
     let mut hist = BTreeMap::<usize, usize>::new();
     let full_box = Vbox::new(colors, &mut hist);
