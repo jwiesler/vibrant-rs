@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use image::{FilterType, DynamicImage, GenericImageView, Pixel, Rgb};
 use crate::quantizer::quantize_pixels;
-use termion::color;
 
 /// Color swatch generated from an image's palette.
 pub struct Swatch {
@@ -37,8 +36,6 @@ impl Palette {
         let image = image.resize((image.width() as f32 / quality as f32) as u32, (image.height() as f32 / quality as f32) as u32,
             FilterType::Triangle);
 
-        //println!("shrunk image to {}x{}", image.width(), image.height());
-
         let pixels: Vec<Rgb<u8>> = image.pixels()
                                          .map(|(_, _, pixel)| pixel.to_rgb())
                                          .collect();
@@ -46,10 +43,7 @@ impl Palette {
         let mut pixels_cleaned = pixels.clone();
         pixels_cleaned.retain(|i| !is_boring_pixel(&i));
 
-        //println!("hashset: {}, original: {}, cleaned: {}", pixel_hashset.len(), pixels.len(), pixels_cleaned.len());
-
         let quant = quantize_pixels(color_count, &mut pixels_cleaned);
-
 
         let pixel_counts = quant.iter().enumerate().fold(HashMap::new(), |mut m, (i, p)| { m.insert(i, p.population); m });
 
