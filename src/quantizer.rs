@@ -55,7 +55,7 @@ impl Vbox {
             let g = i[1] >> RSHIFT;
             let b = i[2] >> RSHIFT;
 
-            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            let idx = get_color_index(r, g, b);
             *hist.entry(idx).or_insert(0) += 1;
             if r > vbox.max_red { vbox.max_red = r };
             if g > vbox.max_green { vbox.max_green = g };
@@ -74,7 +74,7 @@ impl Vbox {
         let mut ct = 0;
         for (r, g, b) in
                 iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
-            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            let idx = get_color_index(r, g, b);
             ct += match hist.get(&idx) {
                 Some(p) => *p,
                 None => continue,
@@ -103,7 +103,7 @@ impl Vbox {
 
         for (r, g, b) in
                 iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
-            let idx = get_color_index(Rgb::<u8>([r, g, b]));
+            let idx = get_color_index(r, g, b);
             match hist.get(&idx) {
                 None => continue,
                 Some(h) => {
@@ -136,7 +136,7 @@ impl Vbox {
                 for r in self.min_red..=self.max_red {
                     sum = 0;
                     for (g, b) in iproduct!(self.min_green..=self.max_green, self.min_blue..=self.max_blue) {
-                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        let idx = get_color_index(r, g, b);
                         sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
@@ -147,7 +147,7 @@ impl Vbox {
                 for g in self.min_green..=self.max_green {
                     sum = 0;
                     for (r, b) in iproduct!(self.min_red..=self.max_red, self.min_blue..=self.max_blue) {
-                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        let idx = get_color_index(r, g, b);
                         sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
@@ -158,7 +158,7 @@ impl Vbox {
                 for b in self.min_blue..=self.max_blue {
                     sum = 0;
                     for (r, g) in iproduct!(self.min_red..=self.max_red, self.min_green..=self.max_green) {
-                        let idx = get_color_index(Rgb::<u8>([r, g, b]));
+                        let idx = get_color_index(r, g, b);
                         sum += match hist.get(&idx) { Some(a) => a, None => continue };
                     }
                     total += sum;
@@ -270,6 +270,6 @@ fn generate_average_colors(vboxes: Vec<Vbox>, hist: &BTreeMap<usize, usize>) -> 
     }
     avg_colors
 }
-fn get_color_index(color: Rgb<u8>) -> usize {
-    ((color[0] as usize) << (2 * SIGBITS)) + ((color[1] as usize) << SIGBITS) + color[2] as usize
+fn get_color_index(r: u8, g: u8, b: u8) -> usize {
+    ((r as usize) << (2 * SIGBITS)) + ((g as usize) << SIGBITS) + b as usize
 }
