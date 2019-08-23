@@ -27,7 +27,9 @@ impl Vibrancy {
     /// Create new vibrancy map from an image
     pub fn new(image: &DynamicImage) -> Vibrancy
     {
-        generate_varation_colors(&Palette::new(image, 64, 5))
+        let mut v = generate_varation_colors(&Palette::new(image, 64, 5));
+        generate_empty_swatches(&mut v);
+        v
     }
 
     fn color_already_set(&self, color: &Rgb<u8>) -> bool {
@@ -201,6 +203,64 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
         });
 
     vibrancy
+}
+
+fn generate_empty_swatches(v: &mut Vibrancy) {
+    if v.primary.is_none() && v.dark.is_none() && v.light.is_none() {
+        if v.dark.is_none() && v.dark_muted.is_some() {
+            let mut hsl = HSL::from_rgb(v.dark_muted.unwrap().channels());
+            hsl.l = settings::TARGET_DARK_LUMA;
+            let (r, g, b) = hsl.to_rgb();
+            v.dark = Some(Rgb::<u8>([r, g, b]));
+        }
+        if v.light.is_none() && v.light_muted.is_some() {
+            let mut hsl = HSL::from_rgb(v.light_muted.unwrap().channels());
+            hsl.l = settings::TARGET_LIGHT_LUMA;
+            let (r, g, b) = hsl.to_rgb();
+            v.light = Some(Rgb::<u8>([r, g, b]));
+        }
+    }
+    if v.primary.is_none() && v.dark.is_some() {
+        let mut hsl = HSL::from_rgb(v.dark.unwrap().channels());
+        hsl.l = settings::TARGET_NORMAL_LUMA;
+        let (r, g, b) = hsl.to_rgb();
+        v.primary = Some(Rgb::<u8>([r, g, b]));
+    } else if v.primary.is_none() && v.light.is_some() {
+        let mut hsl = HSL::from_rgb(v.light.unwrap().channels());
+        hsl.l = settings::TARGET_NORMAL_LUMA;
+        let (r, g, b) = hsl.to_rgb();
+        v.primary = Some(Rgb::<u8>([r, g, b]));
+    }
+    if v.dark.is_none() && v.primary.is_some() {
+        let mut hsl = HSL::from_rgb(v.primary.unwrap().channels());
+        hsl.l = settings::TARGET_DARK_LUMA;
+        let (r, g, b) = hsl.to_rgb();
+        v.dark = Some(Rgb::<u8>([r, g, b]));
+    }
+    if v.light.is_none() && v.primary.is_some() {
+        let mut hsl = HSL::from_rgb(v.primary.unwrap().channels());
+        hsl.l = settings::TARGET_LIGHT_LUMA;
+        let (r, g, b) = hsl.to_rgb();
+        v.light = Some(Rgb::<u8>([r, g, b]));
+    }
+    if v.muted.is_none() && v.primary.is_some() {
+        let mut hsl = HSL::from_rgb(v.primary.unwrap().channels());
+        hsl.s = settings::TARGET_MUTED_SATURATION;
+        let (r, g, b) = hsl.to_rgb();
+        v.muted = Some(Rgb::<u8>([r, g, b]));
+    }
+    if v.dark_muted.is_none() && v.dark.is_some() {
+        let mut hsl = HSL::from_rgb(v.dark.unwrap().channels());
+        hsl.s = settings::TARGET_MUTED_SATURATION;
+        let (r, g, b) = hsl.to_rgb();
+        v.dark_muted = Some(Rgb::<u8>([r, g, b]));
+    }
+    if v.light_muted.is_none() && v.light.is_some() {
+        let mut hsl = HSL::from_rgb(v.light.unwrap().channels());
+        hsl.s = settings::TARGET_MUTED_SATURATION;
+        let (r, g, b) = hsl.to_rgb();
+        v.light_muted = Some(Rgb::<u8>([r, g, b]));
+    }
 }
 
 fn invert_diff(val: f64, target_val: f64) -> f64 {
