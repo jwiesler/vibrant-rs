@@ -43,6 +43,7 @@ enum CompareFn {
    Count,
    Volume,
 }
+
 impl Vbox {
     pub fn new(colors: &Vec<Rgb<u8>>, hist: &mut BTreeMap<usize, usize>) -> Vbox {
         let hn = 1 << (3 * SIGBITS);
@@ -66,10 +67,12 @@ impl Vbox {
         }
         vbox
     }
+
     pub fn get_volume(&self) -> u32 {
         (self.max_red as u32 - self.min_red as u32 + 1) * (self.max_green as u32- self.min_green as u32+ 1) *
                 (self.max_blue as u32 - self.min_blue as u32 + 1)
     }
+
     pub fn get_count(&self, hist: &BTreeMap<usize, usize>) -> u32 {
         let mut ct = 0;
         for (r, g, b) in
@@ -82,6 +85,7 @@ impl Vbox {
         }
         ct as u32
     }
+
     fn get_longest_color_dimension(&self) -> ColorChannel {
         let red_len = self.max_red - self.min_red;
         let green_len = self.max_green - self.min_green;
@@ -94,6 +98,7 @@ impl Vbox {
             ColorChannel::Blue
         }
     }
+
     fn avg(&self, hist: &BTreeMap<usize, usize>) -> Rgb<u8> {
         let mult: u8 = 1 << RSHIFT;
         let mut red_sum: usize = 0;
@@ -125,6 +130,7 @@ impl Vbox {
                        (mult as f64 * (self.min_blue + self.max_blue + 1) as f64/ 2.0) as u8])
         }
     }
+
     fn split(&mut self, hist: &BTreeMap<usize, usize>) -> Vbox {
         if self.get_count(hist) <= 1 { return self.clone() };
         let mut acc_sum = BTreeMap::<usize, usize>::new();
@@ -214,6 +220,9 @@ impl Vbox {
         vbox2
     }
 }
+
+/// Uses the modified median-cut algorithm to quantize an image. This is intended to produce identical results compared to
+/// `node-vibrant`. Colors may slightly vary, but their delta-e distance should be quite low.
 pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>) -> Vec<Swatch> {
     let mut pq = PriorityQueue::with_capacity(max_colors);
     let mut hist = BTreeMap::<usize, usize>::new();
@@ -233,6 +242,7 @@ pub fn quantize_pixels (max_colors: usize, colors: &mut Vec<Rgb<u8>>) -> Vec<Swa
     split_boxes(&mut pq, sec_size, &hist, CompareFn::Volume);
     generate_average_colors(pq.into_sorted_vec(), &hist)
 }
+
 fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, hist: &BTreeMap<usize, usize>,  cmp: CompareFn) {
     let mut last_size = queue.len();
     while queue.len() < max_size {
@@ -261,6 +271,7 @@ fn split_boxes(queue: &mut PriorityQueue<Vbox,u32>, max_size: usize, hist: &BTre
         }
     }
 }
+
 fn generate_average_colors(vboxes: Vec<Vbox>, hist: &BTreeMap<usize, usize>) -> Vec<Swatch> {
     let mut avg_colors = Vec::<Swatch>::with_capacity(vboxes.len());
     for vbox in vboxes {
@@ -269,6 +280,7 @@ fn generate_average_colors(vboxes: Vec<Vbox>, hist: &BTreeMap<usize, usize>) -> 
     }
     avg_colors
 }
+
 fn get_color_index(r: u8, g: u8, b: u8) -> usize {
     ((r as usize) << (2 * SIGBITS)) + ((g as usize) << SIGBITS) + b as usize
 }
