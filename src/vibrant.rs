@@ -81,6 +81,30 @@ impl Vibrancy {
     //         }
     //     }
     // }
+
+    pub fn primary(&self) -> Option<Rgb<u8>> {
+        self.primary
+    }
+
+    pub fn dark(&self) -> Option<Rgb<u8>> {
+        self.dark
+    }
+
+    pub fn light(&self) -> Option<Rgb<u8>> {
+        self.light
+    }
+
+    pub fn muted(&self) -> Option<Rgb<u8>> {
+        self.muted
+    }
+
+    pub fn dark_muted(&self) -> Option<Rgb<u8>> {
+        self.dark_muted
+    }
+    
+    pub fn light_muted(&self) -> Option<Rgb<u8>> {
+        self.light_muted
+    }
 }
 
 impl fmt::Display for Vibrancy {
