@@ -15,9 +15,9 @@ extern crate hsl;
 extern crate image;
 extern crate itertools;
 
+pub use palette::Palette;
+pub use vibrant::Vibrancy;
+
 mod palette;
 mod settings;
 mod vibrant;
-
-pub use palette::Palette;
-pub use vibrant::Vibrancy;

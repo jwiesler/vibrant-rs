@@ -1,3 +1,4 @@
+use std::array::IntoIter;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -12,11 +13,17 @@ use crate::settings;
 /// 6 vibrant colors: primary, dark, light, dark muted and light muted.
 #[derive(Debug, Hash, PartialEq, Eq, Default)]
 pub struct Vibrancy {
+    /// Primary vibrant color
     pub primary: Option<VibrancyColor>,
+    /// Dark vibrant color
     pub dark: Option<VibrancyColor>,
+    /// Light vibrant color
     pub light: Option<VibrancyColor>,
+    /// Muted vibrant color
     pub muted: Option<VibrancyColor>,
+    /// Dark muted vibrant color
     pub dark_muted: Option<VibrancyColor>,
+    /// Light muted vibrant color
     pub light_muted: Option<VibrancyColor>,
 }
 
@@ -24,6 +31,12 @@ pub struct Vibrancy {
 pub struct VibrancyColor {
     pub color: Rgb<u8>,
     pub population: usize,
+}
+
+impl AsRef<Rgb<u8>> for VibrancyColor {
+    fn as_ref(&self) -> &Rgb<u8> {
+        &self.color
+    }
 }
 
 impl Vibrancy {
@@ -37,38 +50,28 @@ impl Vibrancy {
     }
 
     fn color_already_set(&self, color: &Rgb<u8>) -> bool {
-        let color = Some(*color);
-
-        // <option>.contains(color) does exactly this, but is marked as unstable.
-        fn check_color(
-            vibrancy_color_option: &Option<VibrancyColor>,
-            expected: Option<Rgb<u8>>,
-        ) -> bool {
-            match vibrancy_color_option {
-                Some(vibrancy_color) => Some(vibrancy_color.color) == expected,
-                None => false,
-            }
-        }
-
-        check_color(&self.primary, color)
-            || check_color(&self.dark, color)
-            || check_color(&self.light, color)
-            || check_color(&self.muted, color)
-            || check_color(&self.dark_muted, color)
-            || check_color(&self.light_muted, color)
+        IntoIter::new([
+            self.primary.as_ref(),
+            self.dark.as_ref(),
+            self.light.as_ref(),
+            self.muted.as_ref(),
+            self.dark_muted.as_ref(),
+            self.light_muted.as_ref(),
+        ])
+        .any(|v| v.map(AsRef::as_ref) == Some(color))
     }
 
     fn find_color_variation(
         &self,
         palette: &[Rgb<u8>],
         pixel_counts: &BTreeMap<usize, usize>,
-        luma: &MTM<f64>,
-        saturation: &MTM<f64>,
+        luma: &MinMaxTarget<f64>,
+        saturation: &MinMaxTarget<f64>,
     ) -> Option<VibrancyColor> {
         let mut max = None;
         let mut max_value = 0_f64;
 
-        let complete_population = pixel_counts.values().fold(0, |acc, c| acc + c);
+        let complete_population = pixel_counts.values().sum::<usize>();
 
         for (index, swatch) in palette.iter().enumerate() {
             let HSL { h: _, s, l } = HSL::from_rgb(swatch.channels());
@@ -79,7 +82,7 @@ impl Vibrancy {
                 && l <= luma.max
                 && !self.color_already_set(swatch)
             {
-                let population = *pixel_counts.get(&index).unwrap_or(&0) as f64;
+                let population = pixel_counts.get(&index).copied().unwrap_or(0) as f64;
                 if population == 0_f64 {
                     continue;
                 }
@@ -93,7 +96,7 @@ impl Vibrancy {
                 );
                 if max.is_none() || value > max_value {
                     max = Some(VibrancyColor {
-                        color: swatch.clone(),
+                        color: *swatch,
                         population: population as usize,
                     });
                     max_value = value;
@@ -103,17 +106,6 @@ impl Vibrancy {
 
         max
     }
-
-    // fn fill_empty_swatches(self) {
-    //     if self.primary.is_none() {
-    //         // If we do not have a vibrant color...
-    //         if let Some(dark) = self.dark {
-    //             // ...but we do have a dark vibrant, generate the value by modifying the luma
-    //             let hsl = HSL::from_pixel(&dark).clone()
-    //             hsl.l = settings::TARGET_NORMAL_LUMA;
-    //         }
-    //     }
-    // }
 }
 
 impl fmt::Display for VibrancyColor {
@@ -127,7 +119,7 @@ impl fmt::Display for VibrancyColor {
 
 impl fmt::Display for Vibrancy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Vibrant Colors {{\n")?;
+        writeln!(f, "Vibrant Colors {{")?;
 
         macro_rules! display_color {
             ($formatter:expr, $name:expr, $color:expr) => {
@@ -135,12 +127,10 @@ impl fmt::Display for Vibrancy {
                 write!($formatter, $name)?;
                 write!($formatter, ": ")?;
                 if let Some(c) = $color {
-                    write!($formatter, "{}", c)?;
+                    writeln!($formatter, "{}", c)?;
                 } else {
-                    write!($formatter, "None")?;
+                    writeln!($formatter, "None")?;
                 }
-
-                write!($formatter, "\n")?;
             };
         }
 
@@ -160,12 +150,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.primary = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_NORMAL_LUMA,
             target: settings::TARGET_NORMAL_LUMA,
             max: settings::MAX_NORMAL_LUMA,
         },
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_VIBRANT_SATURATION,
             target: settings::TARGET_VIBRANT_SATURATION,
             max: 1_f64,
@@ -175,12 +165,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.light = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_LIGHT_LUMA,
             target: settings::TARGET_LIGHT_LUMA,
             max: 1_f64,
         },
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_VIBRANT_SATURATION,
             target: settings::TARGET_VIBRANT_SATURATION,
             max: 1_f64,
@@ -190,12 +180,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.dark = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: 0_f64,
             target: settings::TARGET_DARK_LUMA,
             max: settings::MAX_DARK_LUMA,
         },
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_VIBRANT_SATURATION,
             target: settings::TARGET_VIBRANT_SATURATION,
             max: 1_f64,
@@ -205,12 +195,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.muted = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_NORMAL_LUMA,
             target: settings::TARGET_NORMAL_LUMA,
             max: settings::MAX_NORMAL_LUMA,
         },
-        &MTM {
+        &MinMaxTarget {
             min: 0_f64,
             target: settings::TARGET_MUTED_SATURATION,
             max: settings::MAX_MUTED_SATURATION,
@@ -220,12 +210,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.light_muted = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: settings::MIN_LIGHT_LUMA,
             target: settings::TARGET_LIGHT_LUMA,
             max: 1_f64,
         },
-        &MTM {
+        &MinMaxTarget {
             min: 0_f64,
             target: settings::TARGET_MUTED_SATURATION,
             max: settings::MAX_MUTED_SATURATION,
@@ -235,12 +225,12 @@ fn generate_varation_colors(p: &Palette) -> Vibrancy {
     vibrancy.dark_muted = vibrancy.find_color_variation(
         &p.palette,
         &p.pixel_counts,
-        &MTM {
+        &MinMaxTarget {
             min: 0_f64,
             target: settings::TARGET_DARK_LUMA,
             max: settings::MAX_DARK_LUMA,
         },
-        &MTM {
+        &MinMaxTarget {
             min: 0_f64,
             target: settings::TARGET_MUTED_SATURATION,
             max: settings::MAX_MUTED_SATURATION,
@@ -281,7 +271,7 @@ fn create_comparison_value(
 
 /// Minimum, Maximum, Target
 #[derive(Debug, Hash)]
-struct MTM<T> {
+struct MinMaxTarget<T> {
     min: T,
     target: T,
     max: T,

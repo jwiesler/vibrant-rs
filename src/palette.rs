@@ -66,8 +66,8 @@ impl Palette {
             .collect();
 
         Palette {
-            palette: palette,
-            pixel_counts: pixel_counts,
+            palette,
+            pixel_counts,
         }
     }
 
@@ -86,7 +86,7 @@ impl Palette {
     /// Change ordering of colors in palette to be of frequency using the pixel count.
     pub fn sort_by_frequency(&self) -> Self {
         let mut colors = self.palette.clone();
-        colors.sort_by(|a, b| self.frequency_of(&a).cmp(&self.frequency_of(&b)));
+        colors.sort_by_key(|value| self.frequency_of(value));
 
         Palette {
             palette: colors,
