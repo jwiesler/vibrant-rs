@@ -101,26 +101,32 @@ impl Vibrancy {
     //     }
     // }
 
+    /// Gets the primary vibrant color information.
     pub fn primary(&self) -> Option<VibrancyColor> {
         self.primary
     }
 
+    /// Gets the dark vibrant color information.
     pub fn dark(&self) -> Option<VibrancyColor> {
         self.dark
     }
 
+    /// Gets the light vibrant color information.
     pub fn light(&self) -> Option<VibrancyColor> {
         self.light
     }
 
+    /// Gets the primary muted color information.
     pub fn muted(&self) -> Option<VibrancyColor> {
         self.muted
     }
 
+    /// Gets the dark muted color information.
     pub fn dark_muted(&self) -> Option<VibrancyColor> {
         self.dark_muted
     }
 
+    /// Gets the light muted color information.
     pub fn light_muted(&self) -> Option<VibrancyColor> {
         self.light_muted
     }
