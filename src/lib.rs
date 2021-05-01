@@ -8,17 +8,16 @@
 
 #![cfg_attr(feature = "dev", feature(plugin))]
 #![cfg_attr(feature = "dev", plugin(clippy))]
-
 #![deny(missing_docs)]
 
-extern crate image;
 extern crate color_quant;
-extern crate itertools;
 extern crate hsl;
+extern crate image;
+extern crate itertools;
 
-mod settings;
 mod palette;
+mod settings;
 mod vibrant;
 
-pub use vibrant::Vibrancy;
 pub use palette::Palette;
+pub use vibrant::Vibrancy;
