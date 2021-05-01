@@ -10,6 +10,7 @@ target
 *.bak
 *~
 .vscode
+.idea
 
 # System stuff
 .DS_Store
