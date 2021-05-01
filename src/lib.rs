@@ -16,7 +16,7 @@ extern crate image;
 extern crate itertools;
 
 pub use palette::Palette;
-pub use vibrant::Vibrancy;
+pub use vibrant::{Vibrancy, VibrancyColor};
 
 mod palette;
 mod settings;
