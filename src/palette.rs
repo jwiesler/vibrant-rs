@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt;
 
 use color_quant::NeuQuant;
@@ -6,17 +5,23 @@ use image::{GenericImage, Pixel, Rgb, Rgba};
 use itertools::Itertools;
 
 /// Palette of colors.
-#[derive(Debug, Hash, PartialEq, Eq, Default)]
+#[derive(Debug, Default)]
 pub struct Palette {
-    /// Palette of Colors represented in RGB
-    pub palette: Vec<Rgb<u8>>,
-    /// A map of indices in the palette to a count of pixels in approximately that color in the
-    /// original image.
-    pub pixel_counts: BTreeMap<usize, usize>,
+    /// Palette of Colors
+    pub palette: Vec<Color>,
+}
+
+/// Color with population
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub struct Color {
+    /// Color
+    pub color: Rgb<u8>,
+    /// Population
+    pub population: usize,
 }
 
 impl Palette {
-    /// Create a new palett from an image
+    /// Create a new palette from an image
     ///
     /// Color count and quality are given straight to [color_quant], values should be between
     /// 8...512 and 1...30 respectively. (By the way: 10 is a good default quality.)
@@ -43,55 +48,41 @@ impl Palette {
             }
         }
 
-        let quant = NeuQuant::new(quality, color_count, &flat_pixels);
+        let quantize = NeuQuant::new(quality, color_count, &flat_pixels);
 
         let pixel_counts = pixels
             .iter()
-            .map(|rgba| quant.index_of(&rgba.channels()))
-            .fold(BTreeMap::new(), |mut acc, pixel| {
-                *acc.entry(pixel).or_insert(0) += 1;
-                acc
-            });
+            .map(|rgba| quantize.index_of(&rgba.channels()))
+            .counts();
 
-        let palette: Vec<Rgb<u8>> = quant
-            .color_map_rgba()
-            .iter()
-            .chunks(4)
-            .into_iter()
-            .map(|rgba_iter| {
-                let rgba_slice: Vec<u8> = rgba_iter.cloned().collect();
-                Rgba::from_slice(&rgba_slice).clone().to_rgb()
+        let palette = quantize
+            .color_map_rgb()
+            .chunks_exact(3)
+            .enumerate()
+            .flat_map(|(i, rgb)| pixel_counts.get(&i).map(|&count| (count, rgb)))
+            .map(|(count, rgb)| Color {
+                color: *Rgb::from_slice(rgb),
+                population: count,
             })
-            .unique()
+            .unique_by(|c| c.color)
             .collect();
 
-        Palette {
-            palette,
-            pixel_counts,
-        }
+        Palette { palette }
     }
 
     fn frequency_of(&self, color: &Rgb<u8>) -> usize {
-        let index = self
-            .palette
+        self.palette
             .iter()
-            .position(|x| x.channels() == color.channels());
-        if let Some(index) = index {
-            *self.pixel_counts.get(&index).unwrap_or(&0)
-        } else {
-            0
-        }
+            .find(|x| x.color.channels() == color.channels())
+            .map(|c| c.population)
+            .unwrap_or(0)
     }
 
     /// Change ordering of colors in palette to be of frequency using the pixel count.
     pub fn sort_by_frequency(&self) -> Self {
-        let mut colors = self.palette.clone();
-        colors.sort_by_key(|value| self.frequency_of(value));
-
-        Palette {
-            palette: colors,
-            pixel_counts: self.pixel_counts.clone(),
-        }
+        let mut palette = self.palette.clone();
+        palette.sort_by_key(|value| self.frequency_of(&value.color));
+        Self { palette }
     }
 }
 
@@ -112,9 +103,19 @@ impl fmt::Display for Palette {
         let color_list = self
             .palette
             .iter()
+            .map(|c| c.color)
             .map(|rgb| format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]))
             .join(", ");
 
         write!(f, "Color Palette {{ {} }}", color_list)
+    }
+}
+
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let rgb = self.color.channels();
+        write!(f, "#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2])?;
+
+        write!(f, ", {} pixels", self.population)
     }
 }

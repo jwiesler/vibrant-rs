@@ -1,11 +1,10 @@
 use std::array::IntoIter;
-use std::collections::BTreeMap;
 use std::fmt;
 
 use hsl::HSL;
-use image::{GenericImage, Pixel, Rgb};
+use image::{Pixel, Rgb};
 
-use crate::palette::Palette;
+use crate::palette::{Color, Palette};
 use crate::settings;
 
 /// Vibrancy
@@ -14,39 +13,115 @@ use crate::settings;
 #[derive(Debug, Hash, PartialEq, Eq, Default)]
 pub struct Vibrancy {
     /// Primary vibrant color
-    pub primary: Option<VibrancyColor>,
+    pub primary: Option<Color>,
     /// Dark vibrant color
-    pub dark: Option<VibrancyColor>,
+    pub dark: Option<Color>,
     /// Light vibrant color
-    pub light: Option<VibrancyColor>,
+    pub light: Option<Color>,
     /// Muted vibrant color
-    pub muted: Option<VibrancyColor>,
+    pub muted: Option<Color>,
     /// Dark muted vibrant color
-    pub dark_muted: Option<VibrancyColor>,
+    pub dark_muted: Option<Color>,
     /// Light muted vibrant color
-    pub light_muted: Option<VibrancyColor>,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct VibrancyColor {
-    pub color: Rgb<u8>,
-    pub population: usize,
-}
-
-impl AsRef<Rgb<u8>> for VibrancyColor {
-    fn as_ref(&self) -> &Rgb<u8> {
-        &self.color
-    }
+    pub light_muted: Option<Color>,
 }
 
 impl Vibrancy {
     /// Create new vibrancy map from an image
-    pub fn new<P, G>(image: &G) -> Vibrancy
-    where
-        P: Sized + Pixel<Subpixel = u8>,
-        G: Sized + GenericImage<Pixel = P>,
-    {
-        generate_varation_colors(&Palette::new(image, 256, 10))
+    pub fn from_palette(palette: &Palette) -> Vibrancy {
+        let mut vibrancy = Vibrancy::default();
+        let max_population = palette.palette.iter().map(|c| c.population).max().unwrap();
+        vibrancy.primary = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: settings::MIN_NORMAL_LUMA,
+                target: settings::TARGET_NORMAL_LUMA,
+                max: settings::MAX_NORMAL_LUMA,
+            },
+            &MinMaxTarget {
+                min: settings::MIN_VIBRANT_SATURATION,
+                target: settings::TARGET_VIBRANT_SATURATION,
+                max: 1_f64,
+            },
+            max_population,
+        );
+
+        vibrancy.light = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: settings::MIN_LIGHT_LUMA,
+                target: settings::TARGET_LIGHT_LUMA,
+                max: 1_f64,
+            },
+            &MinMaxTarget {
+                min: settings::MIN_VIBRANT_SATURATION,
+                target: settings::TARGET_VIBRANT_SATURATION,
+                max: 1_f64,
+            },
+            max_population,
+        );
+
+        vibrancy.dark = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: 0_f64,
+                target: settings::TARGET_DARK_LUMA,
+                max: settings::MAX_DARK_LUMA,
+            },
+            &MinMaxTarget {
+                min: settings::MIN_VIBRANT_SATURATION,
+                target: settings::TARGET_VIBRANT_SATURATION,
+                max: 1_f64,
+            },
+            max_population,
+        );
+
+        vibrancy.muted = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: settings::MIN_NORMAL_LUMA,
+                target: settings::TARGET_NORMAL_LUMA,
+                max: settings::MAX_NORMAL_LUMA,
+            },
+            &MinMaxTarget {
+                min: 0_f64,
+                target: settings::TARGET_MUTED_SATURATION,
+                max: settings::MAX_MUTED_SATURATION,
+            },
+            max_population,
+        );
+
+        vibrancy.light_muted = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: settings::MIN_LIGHT_LUMA,
+                target: settings::TARGET_LIGHT_LUMA,
+                max: 1_f64,
+            },
+            &MinMaxTarget {
+                min: 0_f64,
+                target: settings::TARGET_MUTED_SATURATION,
+                max: settings::MAX_MUTED_SATURATION,
+            },
+            max_population,
+        );
+
+        vibrancy.dark_muted = vibrancy.find_color_variation(
+            &palette.palette,
+            &MinMaxTarget {
+                min: 0_f64,
+                target: settings::TARGET_DARK_LUMA,
+                max: settings::MAX_DARK_LUMA,
+            },
+            &MinMaxTarget {
+                min: 0_f64,
+                target: settings::TARGET_MUTED_SATURATION,
+                max: settings::MAX_MUTED_SATURATION,
+            },
+            max_population,
+        );
+
+        vibrancy
     }
 
     fn color_already_set(&self, color: &Rgb<u8>) -> bool {
@@ -58,62 +133,45 @@ impl Vibrancy {
             self.dark_muted.as_ref(),
             self.light_muted.as_ref(),
         ])
-        .any(|v| v.map(AsRef::as_ref) == Some(color))
+        .any(|v| v.map(|c| &c.color) == Some(color))
     }
 
     fn find_color_variation(
         &self,
-        palette: &[Rgb<u8>],
-        pixel_counts: &BTreeMap<usize, usize>,
+        palette: &[Color],
         luma: &MinMaxTarget<f64>,
         saturation: &MinMaxTarget<f64>,
-    ) -> Option<VibrancyColor> {
+        max_population: usize,
+    ) -> Option<Color> {
         let mut max = None;
         let mut max_value = 0_f64;
 
-        let complete_population = pixel_counts.values().sum::<usize>();
+        for &Color { color, population } in palette.iter() {
+            let HSL { h: _, s, l } = HSL::from_rgb(color.channels());
 
-        for (index, swatch) in palette.iter().enumerate() {
-            let HSL { h: _, s, l } = HSL::from_rgb(swatch.channels());
-
-            if s >= saturation.min
+            if population != 0
+                && s >= saturation.min
                 && s <= saturation.max
                 && l >= luma.min
                 && l <= luma.max
-                && !self.color_already_set(swatch)
+                && !self.color_already_set(&color)
             {
-                let population = pixel_counts.get(&index).copied().unwrap_or(0) as f64;
-                if population == 0_f64 {
-                    continue;
-                }
                 let value = create_comparison_value(
                     s,
                     saturation.target,
                     l,
                     luma.target,
-                    population,
-                    complete_population as f64,
+                    population as f64,
+                    max_population as f64,
                 );
                 if max.is_none() || value > max_value {
-                    max = Some(VibrancyColor {
-                        color: *swatch,
-                        population: population as usize,
-                    });
+                    max = Some(Color { color, population });
                     max_value = value;
                 }
             }
         }
 
         max
-    }
-}
-
-impl fmt::Display for VibrancyColor {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let rgb = self.color.channels();
-        write!(f, "#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2])?;
-
-        write!(f, ", {} pixels", self.population)
     }
 }
 
@@ -145,107 +203,12 @@ impl fmt::Display for Vibrancy {
     }
 }
 
-fn generate_varation_colors(p: &Palette) -> Vibrancy {
-    let mut vibrancy = Vibrancy::default();
-    vibrancy.primary = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: settings::MIN_NORMAL_LUMA,
-            target: settings::TARGET_NORMAL_LUMA,
-            max: settings::MAX_NORMAL_LUMA,
-        },
-        &MinMaxTarget {
-            min: settings::MIN_VIBRANT_SATURATION,
-            target: settings::TARGET_VIBRANT_SATURATION,
-            max: 1_f64,
-        },
-    );
-
-    vibrancy.light = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: settings::MIN_LIGHT_LUMA,
-            target: settings::TARGET_LIGHT_LUMA,
-            max: 1_f64,
-        },
-        &MinMaxTarget {
-            min: settings::MIN_VIBRANT_SATURATION,
-            target: settings::TARGET_VIBRANT_SATURATION,
-            max: 1_f64,
-        },
-    );
-
-    vibrancy.dark = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: 0_f64,
-            target: settings::TARGET_DARK_LUMA,
-            max: settings::MAX_DARK_LUMA,
-        },
-        &MinMaxTarget {
-            min: settings::MIN_VIBRANT_SATURATION,
-            target: settings::TARGET_VIBRANT_SATURATION,
-            max: 1_f64,
-        },
-    );
-
-    vibrancy.muted = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: settings::MIN_NORMAL_LUMA,
-            target: settings::TARGET_NORMAL_LUMA,
-            max: settings::MAX_NORMAL_LUMA,
-        },
-        &MinMaxTarget {
-            min: 0_f64,
-            target: settings::TARGET_MUTED_SATURATION,
-            max: settings::MAX_MUTED_SATURATION,
-        },
-    );
-
-    vibrancy.light_muted = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: settings::MIN_LIGHT_LUMA,
-            target: settings::TARGET_LIGHT_LUMA,
-            max: 1_f64,
-        },
-        &MinMaxTarget {
-            min: 0_f64,
-            target: settings::TARGET_MUTED_SATURATION,
-            max: settings::MAX_MUTED_SATURATION,
-        },
-    );
-
-    vibrancy.dark_muted = vibrancy.find_color_variation(
-        &p.palette,
-        &p.pixel_counts,
-        &MinMaxTarget {
-            min: 0_f64,
-            target: settings::TARGET_DARK_LUMA,
-            max: settings::MAX_DARK_LUMA,
-        },
-        &MinMaxTarget {
-            min: 0_f64,
-            target: settings::TARGET_MUTED_SATURATION,
-            max: settings::MAX_MUTED_SATURATION,
-        },
-    );
-
-    vibrancy
-}
-
 fn invert_diff(val: f64, target_val: f64) -> f64 {
     1_f64 - (val - target_val).abs()
 }
 
-fn weighted_mean(vals: &[(f64, f64)]) -> f64 {
-    let (sum, sum_weight) = vals
+fn weighted_mean(values: &[(f64, f64)]) -> f64 {
+    let (sum, sum_weight) = values
         .iter()
         .fold((0_f64, 0_f64), |(sum, sum_weight), &(val, weight)| {
             (sum + val * weight, sum_weight + weight)
