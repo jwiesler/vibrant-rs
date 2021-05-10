@@ -16,8 +16,10 @@ extern crate image;
 extern crate itertools;
 
 pub use palette::{Color, Palette};
+pub use quantizer::quantize;
 pub use vibrant::Vibrancy;
 
 mod palette;
+mod quantizer;
 mod settings;
 mod vibrant;

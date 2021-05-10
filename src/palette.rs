@@ -1,8 +1,10 @@
 use std::fmt;
 
-use color_quant::NeuQuant;
-use image::{GenericImage, Pixel, Rgb, Rgba};
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImage, GenericImageView, Pixel, Rgb, Rgba};
 use itertools::Itertools;
+
+use crate::quantize;
 
 /// Palette of colors.
 #[derive(Debug, Default)]
@@ -22,12 +24,19 @@ pub struct Color {
 
 impl Palette {
     /// Create a new palette from an image
-    ///
-    /// Color count and quality are given straight to [color_quant], values should be between
-    /// 8...512 and 1...30 respectively. (By the way: 10 is a good default quality.)
-    ///
-    /// [color_quant]: https://github.com/PistonDevelopers/color_quant
-    pub fn new<P, G>(image: &G, color_count: usize, quality: i32) -> Palette
+    /// Downscales first by factor `1/quality`
+    pub fn new(image: &DynamicImage, color_count: usize, quality: u32) -> Palette {
+        let factor = 1.0 / quality as f64;
+        let image = image.resize(
+            (image.width() as f64 * factor).round() as u32,
+            (image.height() as f64 * factor).round() as u32,
+            FilterType::Gaussian,
+        );
+        Self::from_image(&image, color_count)
+    }
+
+    /// Create a new palette from an image
+    pub fn from_image<P, G>(image: &G, color_count: usize) -> Palette
     where
         P: Sized + Pixel<Subpixel = u8>,
         G: Sized + GenericImage<Pixel = P>,
@@ -36,37 +45,7 @@ impl Palette {
             .pixels()
             .map(|(_, _, pixel)| pixel.to_rgba())
             .collect();
-
-        let mut flat_pixels: Vec<u8> = Vec::with_capacity(pixels.len());
-        for rgba in &pixels {
-            if is_boring_pixel(&rgba) {
-                continue;
-            }
-
-            for subpixel in rgba.channels() {
-                flat_pixels.push(*subpixel);
-            }
-        }
-
-        let quantize = NeuQuant::new(quality, color_count, &flat_pixels);
-
-        let pixel_counts = pixels
-            .iter()
-            .map(|rgba| quantize.index_of(&rgba.channels()))
-            .counts();
-
-        let palette = quantize
-            .color_map_rgb()
-            .chunks_exact(3)
-            .enumerate()
-            .flat_map(|(i, rgb)| pixel_counts.get(&i).map(|&count| (count, rgb)))
-            .map(|(count, rgb)| Color {
-                color: *Rgb::from_slice(rgb),
-                population: count,
-            })
-            .unique_by(|c| c.color)
-            .collect();
-
+        let palette = quantize(&pixels, color_count, is_interesting_pixel);
         Palette { palette }
     }
 
@@ -86,7 +65,7 @@ impl Palette {
     }
 }
 
-fn is_boring_pixel(pixel: &Rgba<u8>) -> bool {
+fn is_interesting_pixel(pixel: &Rgba<u8>) -> bool {
     let (r, g, b, a) = (pixel[0], pixel[1], pixel[2], pixel[3]);
 
     // If pixel is mostly opaque and not white
@@ -95,7 +74,7 @@ fn is_boring_pixel(pixel: &Rgba<u8>) -> bool {
 
     let interesting = (a >= MIN_ALPHA) && !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR);
 
-    !interesting
+    interesting
 }
 
 impl fmt::Display for Palette {
