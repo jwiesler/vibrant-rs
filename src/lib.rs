@@ -10,13 +10,8 @@
 #![cfg_attr(feature = "dev", plugin(clippy))]
 #![deny(missing_docs)]
 
-extern crate color_quant;
-extern crate hsl;
-extern crate image;
-extern crate itertools;
-
-pub use palette::{Color, Palette};
-pub use quantizer::quantize;
+pub use palette::Palette;
+pub use quantizer::*;
 pub use vibrant::Vibrancy;
 
 mod palette;

@@ -1,11 +1,15 @@
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
-
-use image::Rgba;
-
-use crate::Color;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
+use std::ops::Range;
+
+use image::{
+    imageops::{resize, FilterType},
+    GenericImageView, Pixel, Rgba,
+};
+
+use crate::{Color, Error, Quantizer};
 
 const BITS: usize = 5;
 
@@ -93,13 +97,20 @@ impl Quantized {
         Self(value as u8)
     }
 
+    fn to_color(self) -> u8 {
+        self.0 << (8 - BITS)
+    }
+
     fn as_usize(&self) -> usize {
         self.0 as usize
     }
 }
 
-fn color_index(Rgb { r, g, b }: &Rgb<Quantized>) -> usize {
-    (r.as_usize() << (2 * BITS)) | (g.as_usize() << BITS) | b.as_usize() as usize
+impl Rgb<Quantized> {
+    fn as_color_index(&self) -> usize {
+        let &Rgb { r, g, b } = self;
+        (r.as_usize() << (2 * BITS)) | (g.as_usize() << BITS) | b.as_usize()
+    }
 }
 
 struct Histogram {
@@ -113,18 +124,14 @@ impl Histogram {
         }
     }
 
-    fn from_image<F: Fn(&Rgba<u8>) -> bool>(
-        image: &[Rgba<u8>],
+    fn from_image<F: FnMut(&Rgba<u8>) -> bool>(
+        image: impl IntoIterator<Item = Rgba<u8>>,
         f: F,
     ) -> (Self, Vec<Rgb<Quantized>>) {
         let mut histogram = Self::new();
-        let iter = image.iter().cloned().filter_map(|color| {
+        let iter = image.into_iter().filter(f).map(|color| {
             let [r, g, b, _] = color.0;
-            if f(&color) {
-                Some(Rgb { r, g, b }.map(Quantized::from_color))
-            } else {
-                None
-            }
+            Rgb { r, g, b }.map(Quantized::from_color)
         });
 
         for color in iter {
@@ -161,12 +168,12 @@ impl Histogram {
     }
 
     fn insert(&mut self, color: &Rgb<Quantized>) {
-        let index = color_index(color);
+        let index = color.as_color_index();
         self.buckets[index] += 1;
     }
 
     fn count_of(&self, color: &Rgb<Quantized>) -> u32 {
-        let index = color_index(color);
+        let index = color.as_color_index();
         self.buckets[index]
     }
 
@@ -241,20 +248,24 @@ impl<'a> VBox<'a> {
     }
 
     fn average(&self, histogram: &Histogram) -> Color {
-        let init = (Rgb::<usize>::default(), 0);
-        let (color, population) =
-            histogram
-                .colors(self.colors)
-                .fold(init, |(acc_c, acc_p), (v_c, v_p)| {
-                    let color = acc_c.zip(v_c).map(|(a, b)| a + v_p as usize * b.as_usize());
-                    let population = acc_p + v_p as usize;
-                    (color, population)
-                });
+        let init = Rgb::<usize>::default();
+        dbg!(&self.colors);
+        let color = histogram
+            .colors(self.colors)
+            .fold(init, |acc_c, (v_c, v_p)| {
+                let color = acc_c
+                    .zip(v_c)
+                    .map(|(a, b)| a + v_p as usize * b.to_color() as usize);
+                color
+            });
+        dbg!(self.population);
+        let color = color
+            .map(|c| ((c as f64 / self.population as f64).round() as u8))
+            .into_image_rgb();
+        dbg!(color);
         Color {
-            color: color
-                .map(|c| ((c as f64 / population as f64).round() as u8) << (8 - BITS))
-                .into_image_rgb(),
-            population,
+            color,
+            population: self.population as usize,
         }
     }
 
@@ -276,6 +287,7 @@ impl<'a> VBox<'a> {
         }
 
         let split_point_population = self.population / 2;
+        dbg!(self.population, split_point_population);
         // Split after a sum of `split_point_population`, the first partition must not be empty and the last if possible neither
         let split_point = self
             .colors
@@ -285,6 +297,7 @@ impl<'a> VBox<'a> {
             .unwrap_or(self.colors.len())
             .min(self.colors.len() - 1)
             .max(1);
+        dbg!(split_point, self.colors.len());
         let (a, b) = self.colors.split_at_mut(split_point);
         let a = VBox::from_colors(a, histogram);
         let b = Some(b)
@@ -376,39 +389,72 @@ fn split_boxes(queue: &mut BinaryHeap<impl Box>, histogram: &Histogram, target: 
             queue.push(vbox2);
         } else {
             // Split didn't happen
-            dbg!(queue.len());
             break;
         }
-        dbg!(queue.len());
     }
 }
 
-/// Quantizes the input image into the given color count
-pub fn quantize<F: Fn(&Rgba<u8>) -> bool>(
-    image: &[Rgba<u8>],
-    colors: usize,
-    filter: F,
-) -> Vec<Color> {
-    assert!(colors <= 256 && colors >= 2);
+/// Median cut quantizer
+#[derive(Debug, Default)]
+pub struct MedianCut;
 
-    let (histogram, mut distinct_colors) = Histogram::from_image(image, filter);
-    let vbox = VBox::from_colors(&mut distinct_colors, &histogram);
-    let mut queue = BinaryHeap::new();
-    queue.push(SortedVBox::<PopulationExtractor>::new(vbox));
-    split_boxes(&mut queue, &histogram, (0.75 * colors as f64) as usize);
-    let (slice, len, cap) = {
-        let mut me = ManuallyDrop::new(queue.into_vec());
-        (me.as_mut_ptr(), me.len(), me.capacity())
-    };
-    let vec = unsafe {
-        Vec::from_raw_parts(
-            slice as *mut SortedVBox<PopulationVolumeExtractor>,
-            len,
-            cap,
-        )
-    };
-    let mut queue = BinaryHeap::from(vec);
-    split_boxes(&mut queue, &histogram, colors);
+const COLOR_RANGE: Range<usize> = 2..257;
 
-    queue.iter().map(|b| b.vbox.average(&histogram)).collect()
+impl Quantizer for MedianCut {
+    fn quantize<I, P, F>(
+        &self,
+        image: &I,
+        colors: usize,
+        quality: u32,
+        filter: F,
+    ) -> Result<Vec<Color>, Error>
+    where
+        P: Pixel<Subpixel = u8> + 'static,
+        I: GenericImageView<Pixel = P>,
+        F: FnMut(&Rgba<u8>) -> bool,
+    {
+        if !COLOR_RANGE.contains(&colors) {
+            return Err(Error::ColorCountOutOfBounds(colors, COLOR_RANGE));
+        }
+
+        let image = {
+            let factor = 1.0 / quality as f64;
+            let width = (image.width() as f64 * factor).round() as u32;
+            let height = (image.height() as f64 * factor).round() as u32;
+            resize(image, width, height, FilterType::Lanczos3)
+        };
+        let (histogram, mut distinct_colors) =
+            Histogram::from_image(image.pixels().map(|p| p.to_rgba()), filter);
+        // let mut v = histogram
+        //     .buckets()
+        //     .filter(|(_, count)| count != &0)
+        //     .map(|(c, count)| (c.as_color_index(), count))
+        //     .collect::<Vec<_>>();
+        // v.sort_unstable_by_key(|&(_, c)| Reverse(c));
+        // dbg!(image.len());
+        // dbg!(v.len());
+        // for (c, count) in v {
+        //     println!("{}: {}", count, c);
+        // }
+
+        let vbox = VBox::from_colors(&mut distinct_colors, &histogram);
+        let mut queue = BinaryHeap::new();
+        queue.push(SortedVBox::<PopulationExtractor>::new(vbox));
+        split_boxes(&mut queue, &histogram, (0.75 * colors as f64) as usize);
+        let (slice, len, cap) = {
+            let mut me = ManuallyDrop::new(queue.into_vec());
+            (me.as_mut_ptr(), me.len(), me.capacity())
+        };
+        let vec = unsafe {
+            Vec::from_raw_parts(
+                slice as *mut SortedVBox<PopulationVolumeExtractor>,
+                len,
+                cap,
+            )
+        };
+        let mut queue = BinaryHeap::from(vec);
+        split_boxes(&mut queue, &histogram, colors);
+
+        Ok(queue.iter().map(|b| b.vbox.average(&histogram)).collect())
+    }
 }

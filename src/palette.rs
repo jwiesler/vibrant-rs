@@ -1,10 +1,9 @@
 use std::fmt;
 
-use image::imageops::FilterType;
-use image::{DynamicImage, GenericImage, GenericImageView, Pixel, Rgb, Rgba};
+use image::{GenericImageView, Pixel, Rgba};
 use itertools::Itertools;
 
-use crate::quantize;
+use crate::{Color, Error, Quantizer};
 
 /// Palette of colors.
 #[derive(Debug, Default)]
@@ -13,55 +12,27 @@ pub struct Palette {
     pub palette: Vec<Color>,
 }
 
-/// Color with population
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub struct Color {
-    /// Color
-    pub color: Rgb<u8>,
-    /// Population
-    pub population: usize,
-}
-
 impl Palette {
     /// Create a new palette from an image
-    /// Downscales first by factor `1/quality`
-    pub fn new(image: &DynamicImage, color_count: usize, quality: u32) -> Palette {
-        let factor = 1.0 / quality as f64;
-        let image = image.resize(
-            (image.width() as f64 * factor).round() as u32,
-            (image.height() as f64 * factor).round() as u32,
-            FilterType::Gaussian,
-        );
-        Self::from_image(&image, color_count)
-    }
-
-    /// Create a new palette from an image
-    pub fn from_image<P, G>(image: &G, color_count: usize) -> Palette
+    pub fn from_image<P, G, Q>(
+        image: &G,
+        color_count: usize,
+        quality: u32,
+        quantizer: &Q,
+    ) -> Result<Palette, Error>
     where
-        P: Sized + Pixel<Subpixel = u8>,
-        G: Sized + GenericImage<Pixel = P>,
+        P: Pixel<Subpixel = u8> + 'static,
+        G: GenericImageView<Pixel = P>,
+        Q: Quantizer,
     {
-        let pixels: Vec<Rgba<u8>> = image
-            .pixels()
-            .map(|(_, _, pixel)| pixel.to_rgba())
-            .collect();
-        let palette = quantize(&pixels, color_count, is_interesting_pixel);
-        Palette { palette }
-    }
-
-    fn frequency_of(&self, color: &Rgb<u8>) -> usize {
-        self.palette
-            .iter()
-            .find(|x| x.color.channels() == color.channels())
-            .map(|c| c.population)
-            .unwrap_or(0)
+        let palette = quantizer.quantize(image, color_count, quality, is_interesting_pixel)?;
+        Ok(Self { palette })
     }
 
     /// Change ordering of colors in palette to be of frequency using the pixel count.
-    pub fn sort_by_frequency(&self) -> Self {
-        let mut palette = self.palette.clone();
-        palette.sort_by_key(|value| self.frequency_of(&value.color));
-        Self { palette }
+    pub fn into_sorted_by_frequency(mut self) -> Self {
+        self.palette.sort_by_key(|value| value.population);
+        self
     }
 }
 
@@ -72,9 +43,7 @@ fn is_interesting_pixel(pixel: &Rgba<u8>) -> bool {
     const MIN_ALPHA: u8 = 125;
     const MAX_COLOR: u8 = 250;
 
-    let interesting = (a >= MIN_ALPHA) && !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR);
-
-    interesting
+    (a >= MIN_ALPHA) && !(r > MAX_COLOR && g > MAX_COLOR && b > MAX_COLOR)
 }
 
 impl fmt::Display for Palette {

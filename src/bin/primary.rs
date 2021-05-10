@@ -4,12 +4,13 @@ extern crate vibrant;
 use std::env;
 use std::path::Path;
 
-use vibrant::Palette;
+use vibrant::{Neu, Palette};
 
 fn main() {
     let source = env::args().nth(1).expect("No source image given.");
     let img = image::open(&Path::new(&source))
         .unwrap_or_else(|_| panic!("Could not load image {:?}", source));
 
-    println!("{}", Palette::new(&img, 10, 10).sort_by_frequency());
+    let palette = Palette::from_image(&img, 64, 10, &Neu::default()).unwrap();
+    println!("{}", palette.into_sorted_by_frequency());
 }

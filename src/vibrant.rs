@@ -4,8 +4,7 @@ use std::fmt;
 use hsl::HSL;
 use image::{Pixel, Rgb};
 
-use crate::palette::{Color, Palette};
-use crate::settings;
+use crate::{settings, Color};
 
 /// Vibrancy
 ///
@@ -28,11 +27,11 @@ pub struct Vibrancy {
 
 impl Vibrancy {
     /// Create new vibrancy map from an image
-    pub fn from_palette(palette: &Palette) -> Vibrancy {
+    pub fn from_palette(palette: &[Color]) -> Vibrancy {
         let mut vibrancy = Vibrancy::default();
-        let max_population = palette.palette.iter().map(|c| c.population).max().unwrap();
+        let max_population = palette.iter().map(|c| c.population).max().unwrap();
         vibrancy.primary = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: settings::MIN_NORMAL_LUMA,
                 target: settings::TARGET_NORMAL_LUMA,
@@ -47,7 +46,7 @@ impl Vibrancy {
         );
 
         vibrancy.light = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: settings::MIN_LIGHT_LUMA,
                 target: settings::TARGET_LIGHT_LUMA,
@@ -62,7 +61,7 @@ impl Vibrancy {
         );
 
         vibrancy.dark = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: 0_f64,
                 target: settings::TARGET_DARK_LUMA,
@@ -77,7 +76,7 @@ impl Vibrancy {
         );
 
         vibrancy.muted = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: settings::MIN_NORMAL_LUMA,
                 target: settings::TARGET_NORMAL_LUMA,
@@ -92,7 +91,7 @@ impl Vibrancy {
         );
 
         vibrancy.light_muted = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: settings::MIN_LIGHT_LUMA,
                 target: settings::TARGET_LIGHT_LUMA,
@@ -107,7 +106,7 @@ impl Vibrancy {
         );
 
         vibrancy.dark_muted = vibrancy.find_color_variation(
-            &palette.palette,
+            palette,
             &MinMaxTarget {
                 min: 0_f64,
                 target: settings::TARGET_DARK_LUMA,
