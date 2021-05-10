@@ -5,6 +5,7 @@ use image::Rgba;
 
 use crate::Color;
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 
 const BITS: usize = 5;
 
@@ -280,8 +281,10 @@ impl<'a> VBox<'a> {
             .colors
             .iter()
             .position(|c| split_point_population <= histogram.count_of(c))
-            .map(|v| (v + 1).min(self.colors.len() - 1).max(1))
-            .unwrap_or(self.colors.len());
+            .map(|v| (v + 1))
+            .unwrap_or(self.colors.len())
+            .min(self.colors.len() - 1)
+            .max(1);
         let (a, b) = self.colors.split_at_mut(split_point);
         let a = VBox::from_colors(a, histogram);
         let b = Some(b)
@@ -392,6 +395,20 @@ pub fn quantize<F: Fn(&Rgba<u8>) -> bool>(
     let vbox = VBox::from_colors(&mut distinct_colors, &histogram);
     let mut queue = BinaryHeap::new();
     queue.push(SortedVBox::<PopulationExtractor>::new(vbox));
+    split_boxes(&mut queue, &histogram, (0.75 * colors as f64) as usize);
+    let (slice, len, cap) = {
+        let mut me = ManuallyDrop::new(queue.into_vec());
+        (me.as_mut_ptr(), me.len(), me.capacity())
+    };
+    let vec = unsafe {
+        Vec::from_raw_parts(
+            slice as *mut SortedVBox<PopulationVolumeExtractor>,
+            len,
+            cap,
+        )
+    };
+    let mut queue = BinaryHeap::from(vec);
     split_boxes(&mut queue, &histogram, colors);
+
     queue.iter().map(|b| b.vbox.average(&histogram)).collect()
 }
