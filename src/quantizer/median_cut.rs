@@ -287,7 +287,7 @@ impl<'a> VBox<'a> {
         }
 
         let split_point_population = self.population / 2;
-        dbg!(self.population, split_point_population);
+        // dbg!(self.population, split_point_population);
         // Split after a sum of `split_point_population`, the first partition must not be empty and the last if possible neither
         let split_point = self
             .colors
@@ -297,7 +297,7 @@ impl<'a> VBox<'a> {
             .unwrap_or(self.colors.len())
             .min(self.colors.len() - 1)
             .max(1);
-        dbg!(split_point, self.colors.len());
+        // dbg!(split_point, self.colors.len());
         let (a, b) = self.colors.split_at_mut(split_point);
         let a = VBox::from_colors(a, histogram);
         let b = Some(b)
