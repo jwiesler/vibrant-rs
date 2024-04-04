@@ -3,7 +3,7 @@
     "enabledManagers": [
         "cargo"
     ],
-    "forkProcessing": true,
+    "forkProcessing": "enabled",
     "extends": [
         "config:recommended"
     ],
