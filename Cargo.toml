@@ -18,5 +18,5 @@ dev = ["clippy"]
 image = "0.24"
 color_quant = ">=1.0.1"
 itertools = "0.10"
-clippy = { version = "0.0.15", optional = true }
+clippy = { version = "0.0.302", optional = true }
 hsl = ">=0.1.1"
