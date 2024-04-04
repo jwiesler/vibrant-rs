@@ -3,6 +3,7 @@
     "enabledManagers": [
         "cargo"
     ],
+	"bumpVersion": "patch",
     "forkProcessing": "enabled",
     "extends": [
         "config:recommended"
