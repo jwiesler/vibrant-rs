@@ -17,6 +17,6 @@ dev = ["clippy"]
 [dependencies]
 image = "0.25"
 color_quant = ">=1.1.0"
-itertools = "0.10"
+itertools = "0.12"
 clippy = { version = "0.0.302", optional = true }
 hsl = ">=0.1.1"
