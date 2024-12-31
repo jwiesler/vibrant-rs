@@ -1,6 +1,6 @@
 [package]
 name = "vibrant"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Pascal Hertleif <killercup@gmail.com>"]
 repository = "https://github.com/killercup/vibrant-rs.git"
 homepage = "https://github.com/killercup/vibrant-rs.git"
@@ -17,6 +17,6 @@ dev = ["clippy"]
 [dependencies]
 image = "0.25.1"
 color_quant = ">=1.1.0"
-itertools = "0.13.0"
+itertools = "0.14.0"
 clippy = { version = "0.0.302", optional = true }
 hsl = ">=0.1.1"
